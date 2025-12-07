@@ -1,9 +1,0 @@
-{
-  "mcpServers": {
-    "default-server": {
-      "type": "streamable-http",
-      "url": "https://david-parry-mcp.merge-pentest-1.st.codium.ai/mcp",
-      "note": "For Streamable HTTP connections, add this URL directly in your MCP Client"
-    }
-  }
-}

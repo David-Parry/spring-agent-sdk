@@ -1,4 +1,1 @@
-rootProject.name = "command-sdk"
-
-include("internal-core")
-include("app")
+rootProject.name = "internal-core"

@@ -19,6 +19,8 @@ Command SDK is an enterprise-grade framework that bridges the gap between extern
 - **Extensible Framework**: Clear separation between framework code and customer customizations
 
 ## Table of Contents
+- [Installation](#Installation)
+- [Usage](#Usage)
 - [Key Concepts](#key-concepts)
 - [Use Cases](#use-cases)
 - [Features](#features)
@@ -39,6 +41,43 @@ Command SDK is an enterprise-grade framework that bridges the gap between extern
 - [Technology Stack](#technology-stack)
 
 ---
+
+## Installation
+
+### Gradle (Kotlin DSL)
+
+```kotlin
+repositories {
+    mavenCentral()
+    mavenLocal()
+    maven {
+        url = uri("https://maven.pkg.github.com/David-Parry/spring-command-sdk")
+        credentials {
+            username = System.getenv("GITHUB_ACTOR")
+            password = System.getenv("GITHUB_TOKEN")
+        }
+    }
+}
+
+dependencies {
+    implementation("ai.qodo.command:internal-core:2.0.0")
+}
+```
+### Maven 
+
+```xml
+<dependency>
+    <groupId>ai.qodo.command</groupId>
+    <artifactId>internal-core</artifactId>
+    <version>2.0.0</version>
+</dependency>
+```
+## Usage
+
+The library auto-configures when added to a Spring Boot application. Simply add the dependency and Spring Boot will automatically discover and register all components.
+
+For a complete example application, see [qodo-app](https://github.com/David-Parry/qodo-app).
+
 
 ## Key Concepts
 
