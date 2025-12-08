@@ -1,1 +1,1 @@
-rootProject.name = "internal-core"
+rootProject.name = "core-core"

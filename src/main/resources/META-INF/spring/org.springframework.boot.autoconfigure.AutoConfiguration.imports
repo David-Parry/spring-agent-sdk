@@ -1,2 +1,2 @@
-ai.qodo.command.internal.config.QodoCommandAutoConfiguration
-ai.qodo.command.internal.config.autoconfigure.ConfigurationPropertiesFixAutoConfiguration
+com.davidparry.agent.core.config.QodoCommandAutoConfiguration
+com.davidparry.agent.core.config.autoconfigure.ConfigurationPropertiesFixAutoConfiguration

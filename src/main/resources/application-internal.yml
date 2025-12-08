@@ -118,11 +118,11 @@ logging:
         client:
           transport:
             StdioClientTransport: ERROR
-    ai.qodo.command: INFO
-    ai.qodo.command.internal: ${LOGGING_LEVEL_AI_QODO_COMMAND_INTERNAL:INFO}
-    ai.qodo.command.internal.service.WebSocketService: DEBUG
-    ai.qodo.command.internal.service.BaseHandler: TRACE
-    ai.qodo.command.internal.transformer.TemplateProcessor: TRACE
+    com.davidparry.agent: INFO
+    com.davidparry.agent.core: ${LOGGING_LEVEL_AI_QODO_COMMAND_INTERNAL:INFO}
+    com.davidparry.agent.core.service.WebSocketService: DEBUG
+    com.davidparry.agent.core.service.BaseHandler: TRACE
+    com.davidparry.agent.core.transformer.TemplateProcessor: TRACE
 
   pattern:
     console: "%d{yy-MM-dd HH:mm:ss} - [%logger{36}] - %msg%n"
