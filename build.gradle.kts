@@ -4,6 +4,7 @@ plugins {
     id("jacoco")
     id("org.unbroken-dome.test-sets") version "4.1.0"
     id("maven-publish")
+    id("org.jreleaser") version "1.21.0"
 }
 
 group = project.findProperty("group") as String? ?: "ai.qodo.command"
@@ -83,13 +84,13 @@ publishing {
         create<MavenPublication>("mavenJava") {
             from(components["java"])
 
-            groupId = "ai.qodo.command"
-            artifactId = "internal-core"
+            groupId = "com.davidparry.agent"
+            artifactId = "core"
             version = project.version.toString()
 
             pom {
-                name.set("Qodo Command SDK Internal Core")
-                description.set("Core framework for Qodo Command SDK - Spring Boot based AI agent orchestration")
+                name.set("Qodo Agent SDK Core")
+                description.set("Core framework for Qodo Agent SDK - Spring Boot based AI agent orchestration")
                 url.set("https://github.com/David-Parry/spring-command-sdk")
 
                 licenses {
@@ -118,15 +119,21 @@ publishing {
 
     repositories {
         mavenLocal()
-
         maven {
-            name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/David-Parry/spring-command-sdk")
-            credentials {
-                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String? ?: ""
-                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") as String? ?: ""
-            }
+            url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
+
+//        maven {
+//            name = "GitHubPackages"
+//            url = uri("https://maven.pkg.github.com/David-Parry/spring-command-sdk")
+//            credentials {
+//                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String? ?: ""
+//                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") as String? ?: ""
+//            }
+//        }
+
+
+
     }
 }
 
@@ -175,4 +182,20 @@ testSets {
 
 tasks.named<Test>("integrationTest") {
     useJUnitPlatform()
+}
+
+jreleaser {
+    signing {
+        active.set(org.jreleaser.model.Active.ALWAYS)
+        armored.set(true)
+    }
+    deploy {
+        maven {
+            mavenCentral.create("sonatype") {
+                active.set(org.jreleaser.model.Active.RELEASE)
+                url.set("https://central.sonatype.com/api/v1/publisher")
+                stagingRepository("build/staging-deploy")
+            }
+        }
+    }
 }

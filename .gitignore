@@ -13,3 +13,8 @@ aws_ed25519.pub
 /docker/.env
 /docker/aws/notes.md
 /cleanuo.md
+/public-key.asc
+/public-key-base64.txt
+/secret-key.asc
+/secret-key-base64.txt
+/.env.backup
