@@ -1,15 +1,15 @@
-# Command SDK - Spring Boot AI Agent Orchestration Platform
+# Agent SDK - Spring Boot AI Agent Orchestration Platform
 
-A production-ready Spring Boot SDK for building AI-powered automation systems that respond to webhooks, process events, and execute intelligent workflows. The Command SDK provides a robust framework for integrating AI agents with enterprise tools like Jira, Snyk, GitHub, and custom services through the Model Context Protocol (MCP).
+A production-ready Spring Boot SDK for building AI-powered automation systems that respond to webhooks, process events, and execute intelligent workflows. The Agent SDK provides a robust framework for integrating AI agents with enterprise tools like Jira, Snyk, GitHub, and custom services through the Model Context Protocol (MCP).
 
 ## Who Is This For?
 
 - **Customers**: Use and extend the `app` module to add your webhook controllers, handlers, schedulers, and agent workflows. See Quick Start for running locally or with Docker.
 - **Contributors**: Enhance the framework in `internal-core` (messaging, MCP integration, metrics, health). See CONTRIBUTING.md for development guidelines.
 
-## What is Command SDK?
+## What is Agent SDK?
 
-Command SDK is an enterprise-grade framework that bridges the gap between external events (webhooks, scheduled tasks) and AI-powered automation. It provides:
+Agent SDK is an enterprise-grade framework that bridges the gap between external events (webhooks, scheduled tasks) and AI-powered automation. It provides:
 
 - **Event-Driven Architecture**: Receive webhooks from external services and transform them into AI agent tasks
 - **AI Agent Orchestration**: Execute sophisticated AI workflows using Claude, GPT-4, or other LLMs
@@ -85,7 +85,7 @@ For a complete example application, see [qodo-app](https://github.com/David-Parr
 The SDK transforms external events (webhooks, scheduled tasks, API calls) into AI agent tasks. Each event flows through a pipeline: Controller → Message Queue → Agent Engine → Handler.
 
 ### 2. **Model Context Protocol (MCP)**
-MCP is an open standard for connecting AI models to external tools and data sources. Command SDK uses MCP to give AI agents access to:
+MCP is an open standard for connecting AI models to external tools and data sources. Agent SDK uses MCP to give AI agents access to:
 - File systems and code repositories
 - APIs and databases
 - Build tools and test runners
@@ -399,7 +399,7 @@ The custom `McpServersHealthIndicator` performs active health checks on MCP serv
 1. **Set up Prometheus scraping:**
    ```yaml
    scrape_configs:
-     - job_name: 'command-sdk'
+     - job_name: 'agent-sdk'
        metrics_path: '/actuator/prometheus'
        static_configs:
          - targets: ['localhost:8080']
@@ -1186,7 +1186,7 @@ You should have received a copy of the GNU General Public License along with thi
 ## Support
 
 For issues, questions, or contributions:
-- GitHub Issues: [https://github.com/davidparry/command-sdk/issues](https://github.com/davidparry/command-sdk/issues)
+- GitHub Issues: [https://github.com/davidparry/agent-sdk/issues](https://github.com/davidparry/agent-sdk/issues)
 - Documentation: This README and inline code documentation
 - Examples: See the `app` module for implementation examples
 

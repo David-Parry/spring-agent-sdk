@@ -1,6 +1,6 @@
-# Contributing to Command SDK
+# Contributing to Agent SDK
 
-Thank you for your interest in contributing to Command SDK! This document provides guidelines for contributing to this Spring Boot AI agent orchestration platform.
+Thank you for your interest in contributing to Agent SDK! This document provides guidelines for contributing to this Spring Boot AI agent orchestration platform.
 
 ## Table of Contents
 
@@ -33,13 +33,13 @@ We are committed to providing a welcoming and inclusive environment for all cont
 
 ## Understanding the Project Structure
 
-Command SDK is organized into two distinct modules with different purposes:
+Agent SDK is organized into two distinct modules with different purposes:
 
 ### `app` Module - Customer Implementation Layer
 
 **Location:** `/app/src/main/java/ai/qodo/command/app/`
 
-**Purpose:** This module is where **customers of the Command API use the SDK** to build their own integrations and workflows.
+**Purpose:** This module is where **customers of the Agent API use the SDK** to build their own integrations and workflows.
 
 **Contains:**
 - **Controllers** (`controllers/`) - Webhook endpoints for external services (Snyk, Jira, GitHub, etc.)
@@ -53,13 +53,13 @@ Command SDK is organized into two distinct modules with different purposes:
 - Implementing custom business logic for specific workflows
 - Integrating with enterprise tools and services
 
-**Note:** The `app` module is designed to be modified by customers. It serves as an **example implementation** showing how to use the Command SDK framework.
+**Note:** The `app` module is designed to be modified by customers. It serves as an **example implementation** showing how to use the Agent SDK framework.
 
 ### `internal-core` Module - Framework Layer
 
 **Location:** `/internal-core/src/main/java/ai/qodo/command/internal/`
 
-**Purpose:** This module contains the **core framework code** that powers the Command SDK. Contributions here improve the framework for all users.
+**Purpose:** This module contains the **core framework code** that powers the Agent SDK. Contributions here improve the framework for all users.
 
 **Contains:**
 - **Services** (`service/`) - Core messaging, WebSocket, agent orchestration
@@ -972,7 +972,7 @@ Contributors will be:
 
 ## License
 
-By contributing to Command SDK, you agree that your contributions will be licensed under the same license as the project (GNU Affero General Public License v3.0 or later).
+By contributing to Agent SDK, you agree that your contributions will be licensed under the same license as the project (GNU Affero General Public License v3.0 or later).
 
 All source files in this project include the following copyright header:
 
@@ -999,4 +999,4 @@ If you have questions about contributing, please:
 3. Search existing GitHub issues
 4. Open a new GitHub discussion
 
-Thank you for contributing to Command SDK! 🚀
+Thank you for contributing to Agent SDK! 🚀
