@@ -60,11 +60,18 @@ public class WebSocketMetrics {
     // Maximum age for a connection before considering it stale (30 minutes)
     private static final Duration STALE_CONNECTION_THRESHOLD = Duration.ofMinutes(30);
     
+    private final MeterRegistry meterRegistry;
     private final Counter readySignalTimeouts;
     private final Counter readySignalReceived;
     private final Timer readySignalWaitTime;
     private final Counter normalCloses;
     private final Counter abnormalCloses;
+    
+    // New metrics for reconnection and retry tracking
+    private final Counter reconnectionAttempts;
+    private final Counter reconnectionSuccesses;
+    private final Counter messageRetryExhausted;
+    private final Counter sessionTimeouts;
 
     /**
      * Constructs the global metrics component and registers the active connections gauge.
@@ -72,6 +79,8 @@ public class WebSocketMetrics {
      * @param registry the Micrometer MeterRegistry to register metrics with
      */
     public WebSocketMetrics(MeterRegistry registry) {
+        this.meterRegistry = registry;
+        
         Gauge.builder("qodo_ws_active_connections", activeConnections, ConcurrentHashMap::size)
                 .description("Number of active WebSocket connections in this JVM")
                 .register(registry);
@@ -94,6 +103,23 @@ public class WebSocketMetrics {
         
         this.abnormalCloses = Counter.builder("qodo_ws_abnormal_closes_total")
                 .description("Total number of abnormal WebSocket closures (status != 1000/1001)")
+                .register(registry);
+        
+        // Initialize new reconnection and retry metrics (without dynamic tags)
+        this.reconnectionAttempts = Counter.builder("qodo_ws_reconnection_attempts_total")
+                .description("Total number of WebSocket reconnection attempts")
+                .register(registry);
+        
+        this.reconnectionSuccesses = Counter.builder("qodo_ws_reconnection_successes_total")
+                .description("Total number of successful WebSocket reconnections")
+                .register(registry);
+        
+        this.messageRetryExhausted = Counter.builder("qodo_ws_message_retry_exhausted_total")
+                .description("Total number of messages that exhausted retry limit")
+                .register(registry);
+        
+        this.sessionTimeouts = Counter.builder("qodo_ws_session_timeouts_total")
+                .description("Total number of sessions that exceeded timeout limit")
                 .register(registry);
     }
     
@@ -293,6 +319,106 @@ public class WebSocketMetrics {
      */
     public double getAbnormalCloses() {
         return abnormalCloses.count();
+    }
+    
+    /**
+     * Record a reconnection attempt.
+     * Called when WebSocket starts attempting to reconnect after disconnection.
+     */
+    public void recordReconnectionAttempt() {
+        reconnectionAttempts.increment();
+    }
+
+    /**
+     * Record a successful reconnection.
+     * Called when WebSocket successfully reconnects after disconnection.
+     */
+    public void recordReconnectionSuccess() {
+        reconnectionSuccesses.increment();
+    }
+
+    /**
+     * Record a message retry attempt.
+     * Called when retrying an in-flight message after reconnection.
+     *
+     * @param messageType the type of message being retried ("UserQuery" or "IDERetrievalAnswer")
+     */
+    public void recordMessageRetryAttempt(String messageType) {
+        if (meterRegistry != null) {
+            Counter.builder("qodo_ws_message_retry_attempts_total")
+                   .description("Total number of message retry attempts after reconnection")
+                   .tag("message_type", messageType != null ? messageType : "unknown")
+                   .register(meterRegistry)
+                   .increment();
+        }
+        logger.debug("Recorded message retry attempt for type: {}", messageType);
+    }
+
+    /**
+     * Record a message retry failure.
+     * Called when a message retry attempt fails.
+     *
+     * @param messageType the type of message that failed to retry
+     */
+    public void recordMessageRetryFailure(String messageType) {
+        if (meterRegistry != null) {
+            Counter.builder("qodo_ws_message_retry_failures_total")
+                   .description("Total number of failed message retry attempts")
+                   .tag("message_type", messageType != null ? messageType : "unknown")
+                   .register(meterRegistry)
+                   .increment();
+        }
+        logger.warn("Recorded message retry failure for type: {}", messageType);
+    }
+
+    /**
+     * Record that a message exhausted its retry limit.
+     * Called when a message reaches MAX_MESSAGE_RETRIES without success.
+     */
+    public void recordMessageRetryExhausted() {
+        messageRetryExhausted.increment();
+    }
+
+    /**
+     * Record that a message retry was skipped.
+     * Called when retry is skipped due to checkpoint advancement or other reasons.
+     *
+     * @param reason the reason for skipping ("checkpoint_advanced", etc.)
+     */
+    public void recordMessageRetrySkipped(String reason) {
+        if (meterRegistry != null) {
+            Counter.builder("qodo_ws_message_retry_skipped_total")
+                   .description("Total number of message retries skipped")
+                   .tag("reason", reason != null ? reason : "unknown")
+                   .register(meterRegistry)
+                   .increment();
+        }
+        logger.debug("Recorded message retry skipped: {}", reason);
+    }
+
+    /**
+     * Record a checkpoint comparison result.
+     * Called when comparing checkpoints to determine if retry is safe.
+     *
+     * @param result the comparison result ("unchanged", "checkpoint_changed", "new_checkpoint_created")
+     */
+    public void recordCheckpointComparison(String result) {
+        if (meterRegistry != null) {
+            Counter.builder("qodo_ws_checkpoint_comparisons_total")
+                   .description("Total checkpoint comparisons during reconnection")
+                   .tag("result", result != null ? result : "unknown")
+                   .register(meterRegistry)
+                   .increment();
+        }
+        logger.debug("Recorded checkpoint comparison: {}", result);
+    }
+
+    /**
+     * Record a session timeout.
+     * Called when a session exceeds the configured total session timeout.
+     */
+    public void recordSessionTimeout() {
+        sessionTimeouts.increment();
     }
     
     /**

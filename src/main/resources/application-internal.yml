@@ -36,6 +36,11 @@ qodo:
     # Maximum delay between reconnection attempts (with exponential backoff)
     max-reconnect-delay: ${QODO_WS_MAX_RECONNECT_DELAY:30s}
 
+    # Session timeout configuration
+    # Maximum total duration for a WebSocket session (prevents runaway sessions)
+    # Default: 1800 seconds (30 minutes)
+    total-session-timeout-seconds: ${QODO_WS_TOTAL_SESSION_TIMEOUT_SECONDS:1800}
+
 # Messaging configuration
 messaging:
   provider: ${MESSAGING_PROVIDER:activemq}
