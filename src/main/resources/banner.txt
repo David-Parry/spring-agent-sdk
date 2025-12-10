@@ -1,3 +1,2 @@
-App Version:          ${build.version:unknown}
-Internal-Core:        ${build.internal-core.version:unknown}
-Spring Boot:          ${spring-boot.formatted-version}
+Core:         ${build.version:unknown}
+Spring Boot:  ${spring-boot.formatted-version}

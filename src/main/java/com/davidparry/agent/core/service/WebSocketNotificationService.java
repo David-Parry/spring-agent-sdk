@@ -350,15 +350,17 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
     }
 
     /**
-     * Handles successful reconnection by clearing the reconnection flag.
-     * The actual message retry happens in the READY handler after checkpoint comparison.
+     * Handles successful reconnection.
+     * The reconnection flag will be cleared in the READY handler after evaluating retry logic.
+     * This ensures the READY handler knows this is the first READY after reconnection.
      */
     private void handleReconnectionSuccess() {
         logger.info("Reconnection successful for session: {} - messageInFlight={}, checkpointWhenSent={}, retryCount={}",
                     commandSession != null ? commandSession.sessionId() : "unknown",
                     messageInFlight, checkpointWhenSent, messageRetryCount);
         
-        isReconnecting = false;
+        // NOTE: We intentionally do NOT clear isReconnecting here
+        // It will be cleared in the READY handler after evaluating retry logic
         
         // Record metric for successful reconnection
         webSocketMetrics.recordReconnectionSuccess();
@@ -569,9 +571,20 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                     }
                 }
 
-                // *** NEW: Check if we need to retry an in-flight message after reconnection ***
+                // *** FIXED: Only evaluate retry after reconnection, not on every READY ***
                 if (completed && messageInFlight && lastSentPayload != null) {
-                    evaluateAndRetryInFlightMessage(session.sessionId(), previousKnownCheckpoint, newCheckpointId);
+                    if (isReconnecting) {
+                        // We just reconnected - evaluate if we need to retry the in-flight message
+                        logger.debug("Evaluating retry for in-flight message after reconnection for session: {}", 
+                                     session.sessionId());
+                        evaluateAndRetryInFlightMessage(session.sessionId(), previousKnownCheckpoint, newCheckpointId);
+                        isReconnecting = false;  // Clear the flag after handling
+                    } else {
+                        // Normal READY after successful send - just clear the in-flight state
+                        logger.debug("Normal READY received after message send - clearing in-flight state for session: {}", 
+                                     session.sessionId());
+                        clearInFlightState();
+                    }
                 }
                 break;
             default:

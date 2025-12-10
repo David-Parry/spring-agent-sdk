@@ -16,10 +16,10 @@ qodo:
     # Health check configuration
     # How often to send ping messages to verify connection health
     # Reduced from 30s to 15s for faster connection issue detection
-    ping-interval-seconds: ${QODO_WS_PING_INTERVAL_SECONDS:15}
+    ping-interval-seconds: ${QODO_WS_PING_INTERVAL_SECONDS:35}
     # Maximum time to wait for pong response before considering connection dead
     # Reduced from 10s to 5s for faster failure detection
-    pong-timeout-seconds: ${QODO_WS_PONG_TIMEOUT_SECONDS:5}
+    pong-timeout-seconds: ${QODO_WS_PONG_TIMEOUT_SECONDS:18}
 
     # Connection timeout configuration
     # Maximum time to establish initial WebSocket connection
