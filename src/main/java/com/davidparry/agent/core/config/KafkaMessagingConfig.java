@@ -146,11 +146,13 @@ public class KafkaMessagingConfig {
         configProps.put(ConsumerConfig.SESSION_TIMEOUT_MS_CONFIG, kafka.getSessionTimeoutMs());
         configProps.put(ConsumerConfig.HEARTBEAT_INTERVAL_MS_CONFIG, kafka.getHeartbeatIntervalMs());
         configProps.put(ConsumerConfig.REQUEST_TIMEOUT_MS_CONFIG, kafka.getRequestTimeoutMs());
+        configProps.put(ConsumerConfig.MAX_POLL_INTERVAL_MS_CONFIG, kafka.getMaxPollIntervalMs());
         
         // Apply security configuration
         applySecurityConfig(configProps);
         
-        logger.info("Kafka ConsumerFactory created with group ID: {}", kafka.getGroupId());
+        logger.info("Kafka ConsumerFactory created with group ID: {}, max.poll.interval.ms: {}ms", 
+                    kafka.getGroupId(), kafka.getMaxPollIntervalMs());
         return new DefaultKafkaConsumerFactory<>(configProps);
     }
     

@@ -78,6 +78,10 @@ messaging:
     session-timeout-ms: ${KAFKA_SESSION_TIMEOUT_MS:30000}
     heartbeat-interval-ms: ${KAFKA_HEARTBEAT_INTERVAL_MS:10000}
     request-timeout-ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
+    # Maximum time between poll() calls before consumer is considered dead and removed from group
+    # Must be greater than the maximum expected message processing time (WebSocket session timeout)
+    # Default: 1860000ms (31 minutes) - slightly longer than 30-minute session timeout
+    max-poll-interval-ms: ${KAFKA_MAX_POLL_INTERVAL_MS:1860000}
     # Producer settings
     retries: ${KAFKA_RETRIES:3}
     acks: ${KAFKA_ACKS:all}

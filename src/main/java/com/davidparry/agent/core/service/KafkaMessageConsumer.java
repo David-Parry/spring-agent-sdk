@@ -8,6 +8,7 @@
 
 package com.davidparry.agent.core.service;
 
+import org.apache.kafka.clients.consumer.CommitFailedException;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -89,11 +90,30 @@ public class KafkaMessageConsumer {
                    message.length() > 200 ? message.substring(0, 200) + "..." : message);
         logger.debug("Full message content: {}", message);
         
+        boolean processingSucceeded = false;
+        
         try {
             MessageRouter router = applicationContext.getBean(MessageRouter.class);
             router.processMessage(message);
-            acknowledgment.acknowledge();
-            logger.debug("Successfully processed and acknowledged message from topic '{}'", record.topic());
+            processingSucceeded = true;
+            
+            // Attempt to acknowledge the message
+            try {
+                acknowledgment.acknowledge();
+                logger.debug("Successfully processed and acknowledged message from topic '{}'", record.topic());
+            } catch (CommitFailedException e) {
+                // Consumer was evicted from group during long processing (exceeded max.poll.interval.ms)
+                // The message was processed successfully, but we can't commit the offset
+                // This can happen if processing took longer than max.poll.interval.ms
+                logger.error("Failed to commit offset for successfully processed message - consumer was evicted from group. " +
+                            "Message may be reprocessed after rebalance. Topic: '{}', Partition: {}, Offset: {}. " +
+                            "Consider increasing max.poll.interval.ms if this happens frequently.",
+                            record.topic(), record.partition(), record.offset(), e);
+                
+                // Don't re-throw - the message was processed successfully
+                // The rebalance will handle partition reassignment
+                // The message may be reprocessed by another consumer, so ensure idempotency
+            }
         } catch (Exception e) {
             logger.error("Error processing message from Kafka topic '{}' partition {} offset {}: {}", 
                         record.topic(), 

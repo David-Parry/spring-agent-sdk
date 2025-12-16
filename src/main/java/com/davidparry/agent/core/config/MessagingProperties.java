@@ -116,6 +116,7 @@ public class MessagingProperties {
         private int sessionTimeoutMs = 30000;
         private int heartbeatIntervalMs = 10000;
         private int requestTimeoutMs = 30000;
+        private int maxPollIntervalMs = 1860000; // 31 minutes - must be > session timeout to prevent consumer eviction
         
         // Producer settings
         private int retries = 3;
@@ -189,6 +190,14 @@ public class MessagingProperties {
         
         public void setRequestTimeoutMs(int requestTimeoutMs) {
             this.requestTimeoutMs = requestTimeoutMs;
+        }
+        
+        public int getMaxPollIntervalMs() {
+            return maxPollIntervalMs;
+        }
+        
+        public void setMaxPollIntervalMs(int maxPollIntervalMs) {
+            this.maxPollIntervalMs = maxPollIntervalMs;
         }
         
         public int getRetries() {
