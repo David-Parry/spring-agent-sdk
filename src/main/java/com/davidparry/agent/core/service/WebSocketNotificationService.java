@@ -49,6 +49,7 @@ import java.util.concurrent.*;
 @Scope("prototype")
 public class WebSocketNotificationService implements MessageService, BeanNameAware {
     public static final String TYPE_STRUCTURED_OUTPUT = "structured_output";
+    public static final String TYPE_ANSWER = "answer";
     private static final Logger logger = LoggerFactory.getLogger(WebSocketNotificationService.class);
     private final WebSocketService webSocketService;
     private final MCPClientInitializer mcpClientInitializer;
@@ -510,6 +511,7 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                 // Mark that we expect the server to close the connection
                 webSocketService.markExpectedClose();
 
+                logger.info("Next Handler to call:'{}'", session.agentCommand().name() + Handler.HANDLER_SUFFIX);
                 // Invoke handler with session-specific responses
                 Handler handler = lookupService(session.agentCommand().name() + Handler.HANDLER_SUFFIX, Handler.class);
                 handler.handle(session, List.copyOf(allTaskResponses));

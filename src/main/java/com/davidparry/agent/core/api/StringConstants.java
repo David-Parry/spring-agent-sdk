@@ -16,12 +16,12 @@ public enum StringConstants {
     EVENT_KEY("eventKey"),
     SESSION_ID("sessionId"),
     SUCCESS("success"),
-    TYPE("type"),
+    //TYPE("type"),
     USER_HOME("user.home"),
     PROJECT_STRUCTURE("project_structure"),
     REQUEST_ID("requestId"),
     CHECKPOINT_ID("checkPointId"),
-    MESSAGE_TYP("messageType"),
+    MESSAGE_TYPE("messageType"),
     LLM_CONVERSATION("llmConversation");
 
 

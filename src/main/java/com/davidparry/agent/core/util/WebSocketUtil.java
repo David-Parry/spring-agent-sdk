@@ -20,6 +20,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.UUID;
 
+import static com.davidparry.agent.core.service.WebSocketNotificationService.TYPE_ANSWER;
 import static com.davidparry.agent.core.service.WebSocketNotificationService.TYPE_STRUCTURED_OUTPUT;
 
 public class WebSocketUtil {
@@ -85,10 +86,11 @@ public class WebSocketUtil {
         
         if (response != null) {
             for (TaskResponse r : response) {
-                StringBuilder target = TYPE_STRUCTURED_OUTPUT.equalsIgnoreCase(r.type()) 
-                    ? structuredJson 
-                    : unstructuredJson;
-                appendToolArgs(r, target);
+                if(TYPE_STRUCTURED_OUTPUT.equalsIgnoreCase(r.type()) || TYPE_ANSWER.equalsIgnoreCase(r.type())) {
+                   appendToolArgs(r, structuredJson);
+                } else {
+                    appendToolArgs(r, unstructuredJson);
+                }
             }
         }
         

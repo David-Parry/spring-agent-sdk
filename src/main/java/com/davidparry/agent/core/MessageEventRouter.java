@@ -75,14 +75,14 @@ public class MessageEventRouter implements MessageRouter {
 
             // Parse the message to extract the type field
             JsonNode messageNode = objectMapper.readTree(message);
-            JsonNode typeNode = messageNode.get(MessagePublisher.MSG_TYPE);
+            JsonNode typeNode = messageNode.get(StringConstants.MESSAGE_TYPE.getValue());
             if (typeNode == null || typeNode.isNull()) {
-                logger.warn("Message does not contain a '{}' field, skipping: {}", MessagePublisher.MSG_TYPE, message);
+                logger.warn("Message does not contain a '{}' field, skipping: {}", StringConstants.MESSAGE_TYPE.getValue(), message);
                 return;
             }
             String messageType = typeNode.asText();
             if (messageType.isEmpty()) {
-                logger.warn("Message contains empty '{}' field, skipping: {}", MessagePublisher.MSG_TYPE, message);
+                logger.warn("Message contains empty '{}' field, skipping: {}", StringConstants.MESSAGE_TYPE.getValue(), message);
                 return;
             }
             if (isPingEvent(messageNode)) {
@@ -142,7 +142,7 @@ public class MessageEventRouter implements MessageRouter {
             } else {
                 serviceName = "websocketNotificationService";
             }
-            logger.info("Routed to '{}'", serviceName);
+            logger.info("Routed to Service:'{}'", serviceName);
             if (logger.isDebugEnabled()) {
                 logger.debug("Service name: {} is being invoked with AgentCommand {}", serviceName, commandSession
                         .agentCommand()

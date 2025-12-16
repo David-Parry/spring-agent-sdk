@@ -38,48 +38,48 @@ import static com.davidparry.agent.core.service.WebSocketNotificationService.TYP
  */
 public abstract class BaseHandler implements Handler {
     private static final Logger logger = LoggerFactory.getLogger(BaseHandler.class);
-    private final MessagePublisher messagePublisher;
     /**
- * JSON serializer used to parse and produce message payloads.
- */
-protected final ObjectMapper objectMapper;
+     * JSON serializer used to parse and produce message payloads.
+     */
+    protected final ObjectMapper objectMapper;
+    private final MessagePublisher messagePublisher;
     private final int MAX_MSG_SIZE_BYTES = 104857600;
 
     /**
- * Creates a new BaseHandler.
- *
- * @param messagePublisher publisher used to send responses to the downstream queue
- * @param objectMapper     JSON object mapper for serialization and deserialization
- */
-public BaseHandler(MessagePublisher messagePublisher, ObjectMapper objectMapper) {
+     * Creates a new BaseHandler.
+     *
+     * @param messagePublisher publisher used to send responses to the downstream queue
+     * @param objectMapper     JSON object mapper for serialization and deserialization
+     */
+    public BaseHandler(MessagePublisher messagePublisher, ObjectMapper objectMapper) {
         this.messagePublisher = messagePublisher;
         this.objectMapper = objectMapper;
     }
 
     /**
- * Returns the message type identifier used for routing to the next service/step.
- *
- * @return non-null type identifier for routing
- */
-public abstract String type();
+     * Returns the message type identifier used for routing to the next service/step.
+     *
+     * @return non-null type identifier for routing
+     */
+    public abstract String type();
 
     /**
- * Performs handler-specific processing and may mutate or enrich the payload before publishing.
- *
- * @param map the message payload to process
- * @return the processed payload to publish to the queue
- */
-public abstract Map<String, Object> handle(Map<String, Object> map);
+     * Performs handler-specific processing and may mutate or enrich the payload before publishing.
+     *
+     * @param map the message payload to process
+     * @return the processed payload to publish to the queue
+     */
+    public abstract Map<String, Object> handle(Map<String, Object> map);
 
 
     /**
- * Processes the structured/unstructured responses for the given session, prepares the queue payload
- * and publishes it.
- *
- * @param commandSession   session context and identifiers
- * @param allTaskResponses list of task responses from the agent execution
- */
-@Override
+     * Processes the structured/unstructured responses for the given session, prepares the queue payload
+     * and publishes it.
+     *
+     * @param commandSession   session context and identifiers
+     * @param allTaskResponses list of task responses from the agent execution
+     */
+    @Override
     public void handle(CommandSession commandSession, List<TaskResponse> allTaskResponses) {
         String eventKey = commandSession.eventKey();
         String sessionId = commandSession.sessionId();
@@ -91,7 +91,7 @@ public abstract Map<String, Object> handle(Map<String, Object> map);
         map.put(StringConstants.PROJECT_STRUCTURE.getValue(), stringSessionDirectory(sessionId));
         map.put(StringConstants.REQUEST_ID.getValue(), requestId);
         map.put(StringConstants.CHECKPOINT_ID.getValue(), checkPointId);
-        map.put(StringConstants.MESSAGE_TYP.getValue(), commandSession.messageType());
+        map.put(StringConstants.MESSAGE_TYPE.getValue(), commandSession.messageType());
 
         ServerRawResponses serverRawResponses = WebSocketUtil.parseTaskResponses(allTaskResponses);
 
@@ -99,16 +99,23 @@ public abstract Map<String, Object> handle(Map<String, Object> map);
         // now remove the directory next agent will have its own session and new directory
         removeSessionDirectory(sessionId);
         try {
-            logger.debug("Message to publish marking with either JIRA_BUG_ACTIONABLE or TYPE_STRUCTURED_OUTPUT length" +
-                                 " {}", msg.length());
+            logger.debug("TYPE_STRUCTURED_OUTPUT length {}", msg.length());
             logger.trace("message contents:{}", msg);
-            map.putAll(objectMapper.readValue(msg, Map.class));
+            try {
+                map.putAll(objectMapper.readValue(msg, Map.class));
+            } catch (Exception failure) {
+                logger.error("Failed to turn message: ' {} ' into json",msg, failure);
+                logger.error("The COMPLETE ALLTASKRESPONSES:\n {}", objectMapper.writeValueAsString(allTaskResponses));
+
+                map.putAll(objectMapper.readValue(serverRawResponses.unstructuredJson(), Map.class));
+            }
+
             // ask the handler to give the type also has the way to alter the Map for success in the handle too or
             // add to it before getting put on to the Queue
             if (map.containsKey(StringConstants.SUCCESS.getValue()) && (map.get(StringConstants.SUCCESS.getValue()) instanceof Boolean) && (Boolean) map.get(StringConstants.SUCCESS.getValue())) {
-                map.put(StringConstants.TYPE.getValue(), type());
+                map.put(StringConstants.MESSAGE_TYPE.getValue(), type());
             } else {
-                map.put(StringConstants.TYPE.getValue(), EndFlowCleanup.TYPE);
+                map.put(StringConstants.MESSAGE_TYPE.getValue(), EndFlowCleanup.TYPE);
                 if (logger.isDebugEnabled()) {
                     logger.debug("Response from server session {} reporting success as {} if you want to see the LLM "
                                          + "conversation and response turn trace on for BaseHandler class", sessionId
@@ -126,12 +133,27 @@ public abstract Map<String, Object> handle(Map<String, Object> map);
         } catch (Exception e) {
             logger.error("Failed to parse structuredJson placing back on Queue to retry to Map from string value {}",
                          msg, e);
-            logger.debug("Conversation from LLM before that did not give us a {} variable. {}",
-                         TYPE_STRUCTURED_OUTPUT, serverRawResponses.unstructuredJson());
+            logger.debug("Conversation from LLM before that did not give us a {} variable that was readable '{}'. " +
+                                 "Unstructured conversation: {}", TYPE_STRUCTURED_OUTPUT,
+                         serverRawResponses.structuredJson(), serverRawResponses.unstructuredJson());
             // there was a failure to read the contract of the output schema that the LLM was suppose to return no
             // way to determine if it was success so go to a incomplete service if developer wants too
-            map.put(StringConstants.TYPE.getValue(), MessageService.INCOMPLETE_NODE);
+
+            // removed this test if we really need it
+            //map.put(StringConstants.TYPE.getValue(), MessageService.INCOMPLETE_NODE);
+
+            map.put(StringConstants.MESSAGE_TYPE.getValue(), MessageService.INCOMPLETE_NODE);
             map.put(StringConstants.LLM_CONVERSATION.getValue(), serverRawResponses.unstructuredJson());
+
+            if (logger.isTraceEnabled()) {
+                logger.trace("""
+                                     Response from {} \s\s
+                                     structured response: {} \s\s
+                                     unstructured conversation: {} \s\s
+                                     """, commandSession, serverRawResponses.structuredJson(),
+                             serverRawResponses.unstructuredJson());
+            }
+
         }
         this.messagePublisher.publishResponse(serializeMapForQueue(handle(map)));
 
@@ -154,7 +176,7 @@ public abstract Map<String, Object> handle(Map<String, Object> map);
             }
         } catch (Exception er) {
             logger.error("Something went very wrong with the map to message for QUEUE {}", map, er);
-            msg = "{\"" + StringConstants.TYPE.getValue() + "\":\"" + MessageService.INCOMPLETE_NODE + "\"}";
+            msg = "{\"" + StringConstants.MESSAGE_TYPE.getValue() + "\":\"" + MessageService.INCOMPLETE_NODE + "\"}";
         }
         return msg;
     }
@@ -176,11 +198,11 @@ public abstract Map<String, Object> handle(Map<String, Object> map);
     }
 
     /**
- * Deletes the session working directory and all of its contents.
- *
- * @param sessionId the session identifier whose directory should be removed
- */
-public void removeSessionDirectory(String sessionId) {
+     * Deletes the session working directory and all of its contents.
+     *
+     * @param sessionId the session identifier whose directory should be removed
+     */
+    public void removeSessionDirectory(String sessionId) {
         String directoryPath = getSessionAbsolutePath(sessionId);
         Path directory = Paths.get(directoryPath);
         logger.debug("Removing session base directory {}", directory);
