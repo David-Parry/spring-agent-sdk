@@ -23,8 +23,6 @@ import jakarta.jms.Session;
 import jakarta.jms.TextMessage;
 import jakarta.jms.Topic;
 
-import static com.davidparry.agent.handlers.JiraAgentHandler.JIRA_BUG_ACTIONABLE;
-
 /**
  * Test class for publishing messages to ActiveMQ running in local docker-compose.
  * 
@@ -46,6 +44,7 @@ public class ActiveMQPublisherTest {
     private static final String USERNAME = "qodo";
     private static final String PASSWORD = "qodo";
     private static final String RESPONSE_TOPIC = "response";
+    private static final String MESSAGE_TYPE = "message-type";
     
     private Connection connection;
     private Session session;
@@ -112,7 +111,7 @@ public class ActiveMQPublisherTest {
                         "issueKey": "SCRUM-151",
                         "summary": "Root Cause: Missing client-side date validation allowing invalid dates (like '1990-01-0') to be submitted to the backend."
                     }
-                    """.formatted(JIRA_BUG_ACTIONABLE, System.currentTimeMillis());
+                    """.formatted(MESSAGE_TYPE, System.currentTimeMillis());
 
             logger.info("Publishing JSON message to topic '{}': {}", RESPONSE_TOPIC, jsonMessage);
 

@@ -1,6 +1,6 @@
 project:
   name: core
-  version: 2.0.3
+  version: 2.0.14
   description: Core framework for Qodo Agent SDK
   authors:
     - David Parry
@@ -20,3 +20,6 @@ deploy:
         url: https://central.sonatype.com/api/v1/publisher
         stagingRepositories:
           - build/staging-deploy
+        connectTimeout: 30
+        readTimeout: 120
+        retryDelay: 5
