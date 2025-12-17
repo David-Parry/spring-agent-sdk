@@ -16,8 +16,6 @@ import com.davidparry.agent.core.api.StringConstants;
  * to be configured through Spring Boot configuration.
  */
 public interface MessagePublisher {
-    String MSG_TYPE = StringConstants.TYPE.getValue();
-
     /**
      * Publishes a message to the response topic.
      *

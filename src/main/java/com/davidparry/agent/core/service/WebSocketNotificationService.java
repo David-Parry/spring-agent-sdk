@@ -24,6 +24,7 @@ import com.davidparry.agent.core.util.WebSocketUtil;
 import io.micrometer.core.instrument.Timer;
 import io.modelcontextprotocol.client.McpSyncClient;
 import io.modelcontextprotocol.spec.McpSchema;
+import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.BeanNameAware;
@@ -48,6 +49,7 @@ import java.util.concurrent.*;
 @Scope("prototype")
 public class WebSocketNotificationService implements MessageService, BeanNameAware {
     public static final String TYPE_STRUCTURED_OUTPUT = "structured_output";
+    public static final String TYPE_ANSWER = "answer";
     private static final Logger logger = LoggerFactory.getLogger(WebSocketNotificationService.class);
     private final WebSocketService webSocketService;
     private final MCPClientInitializer mcpClientInitializer;
@@ -66,6 +68,25 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
     private volatile boolean isReconnecting = false;
     private String serviceKey;
 
+    // In-flight message tracking for reconnection retry
+    private volatile String lastSentMessageType;      // "UserQuery" or "IDERetrievalAnswer"
+    private volatile Object lastSentPayload;          // The actual payload object
+    private volatile String lastSentToolId;           // For tool responses (debugging)
+    private volatile boolean messageInFlight = false; // True if message sent, awaiting READY
+
+    // Checkpoint tracking for duplicate prevention
+    private volatile String lastKnownCheckpoint;      // Last checkpoint received from server
+    private volatile String checkpointWhenSent;       // Checkpoint when message was sent
+
+    // Retry limiting (max 3 retries per message)
+    private static final int MAX_MESSAGE_RETRIES = 3;
+    private volatile int messageRetryCount = 0;       // Current retry count for in-flight message
+
+    // Session timeout tracking
+    private volatile Instant sessionStartTime;
+    private volatile ScheduledFuture<?> sessionTimeoutTask;
+    private final ScheduledExecutorService sessionScheduler;
+
     @Autowired
     public WebSocketNotificationService(WebSocketService webSocketService, MCPClientInitializer mcpClientInitializer,
                                         TemplateProcessor templateProcessor, QodoProperties qodoProperties,
@@ -78,6 +99,13 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
         this.applicationContext = applicationContext;
         this.mcpMetrics = mcpMetrics;
         this.webSocketMetrics = webSocketMetrics;
+        
+        // Initialize session scheduler for timeout management
+        this.sessionScheduler = Executors.newSingleThreadScheduledExecutor(r -> {
+            Thread t = new Thread(r, "session-timeout-scheduler");
+            t.setDaemon(true);
+            return t;
+        });
     }
 
     @Override
@@ -158,12 +186,49 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
         this.commandSession = commandSession;
         // Initialize ready signal early to prevent race conditions
         initializeReadySignal();
-        logger.debug("Initialized WebSocketNotificationService for session: {}", commandSession.sessionId());
+        // Schedule session timeout
+        scheduleSessionTimeout();
+        logger.debug("Initialized WebSocketNotificationService for session: {} with timeout: {}s", 
+                     commandSession.sessionId(), qodoProperties.getWebsocket().getTotalSessionTimeoutSeconds());
     }
 
     @Override
     public String serviceKey() {
         return serviceKey;
+    }
+
+    /**
+     * Cleanup resources when service is destroyed.
+     * Ensures proper shutdown of the session timeout scheduler to prevent thread leaks.
+     */
+    @PreDestroy
+    public void destroy() {
+        logger.debug("Destroying WebSocketNotificationService for session: {}", 
+                     commandSession != null ? commandSession.sessionId() : "unknown");
+        
+        // Cancel any pending session timeout task
+        cancelSessionTimeout();
+        
+        // Shutdown the session scheduler
+        if (sessionScheduler != null && !sessionScheduler.isShutdown()) {
+            sessionScheduler.shutdown();
+            try {
+                if (!sessionScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                    sessionScheduler.shutdownNow();
+                    if (!sessionScheduler.awaitTermination(5, TimeUnit.SECONDS)) {
+                        logger.warn("Session scheduler did not terminate for session: {}", 
+                                   commandSession != null ? commandSession.sessionId() : "unknown");
+                    }
+                }
+                logger.debug("Session scheduler shutdown complete for session: {}", 
+                            commandSession != null ? commandSession.sessionId() : "unknown");
+            } catch (InterruptedException e) {
+                sessionScheduler.shutdownNow();
+                Thread.currentThread().interrupt();
+                logger.warn("Interrupted while shutting down session scheduler for session: {}", 
+                           commandSession != null ? commandSession.sessionId() : "unknown");
+            }
+        }
     }
 
     /**
@@ -262,33 +327,50 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
      * This prevents the error handler from interfering with the reconnection process.
      */
     private void handleReconnectionStart() {
-        logger.info("Reconnection starting for session: {} - setting reconnection flag and resetting ready signal",
-                    commandSession != null ? commandSession.sessionId() : "unknown");
+        logger.info("Reconnection starting for session: {} - messageInFlight={}, lastCheckpoint={}, retryCount={}",
+                    commandSession != null ? commandSession.sessionId() : "unknown",
+                    messageInFlight, lastKnownCheckpoint, messageRetryCount);
+        
         isReconnecting = true;
 
-        // Reset the ready signal for the reconnection attempt
+        // Record metric for reconnection attempt
+        webSocketMetrics.recordReconnectionAttempt();
+
+        // Create fresh ready signal for reconnection
         synchronized (readySignalLock) {
-            if (readySignal != null && !readySignal.isDone()) {
-                logger.debug("Completing pending ready signal before reconnection for session: {}",
-                             commandSession != null ? commandSession.sessionId() : "unknown");
-                // Complete it exceptionally to unblock any waiting threads
-                readySignal.completeExceptionally(new CommandException("Reconnection in progress"));
-            }
-            // Create a new ready signal for the reconnected session
+            // Don't complete the old one exceptionally - just create a fresh one
             readySignal = new CompletableFuture<>();
             readySignalPending = true;
-            logger.debug("Created new ready signal for reconnection attempt for session: {}", commandSession != null
-                    ? commandSession.sessionId() : "unknown");
+            readySignalStartTime = Instant.now();
+            logger.debug("Created fresh ready signal for reconnection attempt for session: {}", 
+                         commandSession != null ? commandSession.sessionId() : "unknown");
         }
+        
+        // Note: We keep lastSentPayload and messageInFlight intact for potential retry
+        // The retry decision will be made in handleReconnectionSuccess() based on checkpoint comparison
     }
 
     /**
-     * Handles reconnection completion by clearing the reconnection flag.
+     * Handles successful reconnection.
+     * The reconnection flag will be cleared in the READY handler after evaluating retry logic.
+     * This ensures the READY handler knows this is the first READY after reconnection.
      */
-    private void handleReconnectionComplete() {
-        logger.info("Reconnection completed for session: {} - clearing reconnection flag", commandSession != null ?
-                commandSession.sessionId() : "unknown");
-        isReconnecting = false;
+    private void handleReconnectionSuccess() {
+        logger.info("Reconnection successful for session: {} - messageInFlight={}, checkpointWhenSent={}, retryCount={}",
+                    commandSession != null ? commandSession.sessionId() : "unknown",
+                    messageInFlight, checkpointWhenSent, messageRetryCount);
+        
+        // NOTE: We intentionally do NOT clear isReconnecting here
+        // It will be cleared in the READY handler after evaluating retry logic
+        
+        // Record metric for successful reconnection
+        webSocketMetrics.recordReconnectionSuccess();
+        
+        // Message retry will be triggered by READY handler after checkpoint comparison
+        // This ensures we have the latest checkpoint from server before deciding to retry
+        if (messageInFlight && lastSentPayload != null) {
+            logger.info("Message was in-flight during disconnection - will evaluate retry after READY signal");
+        }
     }
 
     /**
@@ -326,13 +408,15 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
             logger.debug("Request to server is {}", agentRequest);
             return agentRequest;
         }).thenCompose(agentRequest -> {
-            // Connect to WebSocket
+            // Connect to WebSocket with reconnection callbacks
             logger.debug("Connecting to WebSocket for event: {}", session.eventKey());
             return webSocketService
-                    .connect(session, qodoProperties
-                            .getWebsocket()
-                            .getToken(), taskResponse -> handle(session, taskResponse),
-                             error -> handleWebSocketError(session, error))
+                    .connect(session, 
+                             qodoProperties.getWebsocket().getToken(), 
+                             taskResponse -> handle(session, taskResponse),
+                             error -> handleWebSocketError(session, error),
+                             this::handleReconnectionStart,
+                             this::handleReconnectionSuccess)
                     .thenCompose(webSocket -> {
                         if (webSocket == null) {
                             logger.error("WebSocket connection returned null for event: {}", session.eventKey());
@@ -353,6 +437,17 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
 
                             logger.info("Received READY signal after {}ms, now sending agent request for session: {}"
                                     , waitDuration.toMillis(), session.sessionId());
+
+                            // Track the initial UserQuery as in-flight
+                            synchronized (readySignalLock) {
+                                this.lastSentMessageType = "UserQuery";
+                                this.lastSentPayload = agentRequest;
+                                this.lastSentToolId = null;
+                                this.checkpointWhenSent = null; // No checkpoint for initial request
+                                this.messageInFlight = true;
+                                this.messageRetryCount = 0; // Reset retry count for new message
+                                logger.debug("Tracking in-flight UserQuery for session: {}", session.sessionId());
+                            }
 
                             // Send the agent request with explicit session ID
                             return webSocketService.sendObject(WireMsgRouteKey.UserQuery, session.sessionId(),
@@ -410,9 +505,13 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                 logger.info("WebSocket notification completed for session {} event: {}", session.sessionId(),
                             session.eventKey());
 
+                // Cancel session timeout since session completed normally
+                cancelSessionTimeout();
+
                 // Mark that we expect the server to close the connection
                 webSocketService.markExpectedClose();
 
+                logger.info("Next Handler to call:'{}'", session.agentCommand().name() + Handler.HANDLER_SUFFIX);
                 // Invoke handler with session-specific responses
                 Handler handler = lookupService(session.agentCommand().name() + Handler.HANDLER_SUFFIX, Handler.class);
                 handler.handle(session, List.copyOf(allTaskResponses));
@@ -440,8 +539,14 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                         .data()
                         .checkpointId(), commandSession.checkPointId());
 
-                // Update checkpoint_id from READY event
+                // Extract new checkpoint from READY
                 String newCheckpointId = taskResponse.data().checkpointId();
+                
+                // Update lastKnownCheckpoint for tracking
+                String previousKnownCheckpoint = this.lastKnownCheckpoint;
+                this.lastKnownCheckpoint = newCheckpointId;
+                
+                // Update commandSession checkpoint if changed
                 if (newCheckpointId != null && !newCheckpointId.equals(commandSession.checkPointId())) {
                     logger.debug("Updating checkpoint_id: {} -> {}", commandSession.checkPointId(), newCheckpointId);
                     commandSession = CommandSessionBuilder
@@ -449,8 +554,6 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                             .build();
                     logger.info("Reconstructed CommandSession with new checkpoint_id: {} for session: {}",
                                 newCheckpointId, session.sessionId());
-                } else {
-                    logger.debug("Checkpoint_id unchanged or null: {}", newCheckpointId);
                 }
 
                 // Record READY signal received metric
@@ -467,6 +570,22 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                         Duration waitDuration = Duration.between(readySignalStartTime, Instant.now());
                         logger.debug("READY signal received after {}ms for session: {}", waitDuration.toMillis(),
                                      session.sessionId());
+                    }
+                }
+
+                // *** FIXED: Only evaluate retry after reconnection, not on every READY ***
+                if (completed && messageInFlight && lastSentPayload != null) {
+                    if (isReconnecting) {
+                        // We just reconnected - evaluate if we need to retry the in-flight message
+                        logger.debug("Evaluating retry for in-flight message after reconnection for session: {}", 
+                                     session.sessionId());
+                        evaluateAndRetryInFlightMessage(session.sessionId(), previousKnownCheckpoint, newCheckpointId);
+                        isReconnecting = false;  // Clear the flag after handling
+                    } else {
+                        // Normal READY after successful send - just clear the in-flight state
+                        logger.debug("Normal READY received after message send - clearing in-flight state for session: {}", 
+                                     session.sessionId());
+                        clearInFlightState();
                     }
                 }
                 break;
@@ -500,10 +619,12 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
             return;
         }
 
-        // For all other errors, log as error
+        // For all other errors, log as error with comprehensive context
         logger.error("WebSocket error for session {}: {} [checkpoint_id={}, attempt={}, reconnecting={}, " +
-                             "ready_pending={}]", session.sessionId(), error, session.checkPointId(),
-                     session.attemptCount(), isReconnecting, readySignalPending);
+                             "ready_pending={}, messageInFlight={}, retryCount={}, lastMessageType={}, lastCheckpoint={}]", 
+                     session.sessionId(), error, session.checkPointId(),
+                     session.attemptCount(), isReconnecting, readySignalPending,
+                     messageInFlight, messageRetryCount, lastSentMessageType, lastKnownCheckpoint);
 
         if (logger.isDebugEnabled()) {
             // Log accumulated responses when error occurs
@@ -583,6 +704,18 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                 .answer(builder.build())
                 .build();
 
+        // Track this message as in-flight BEFORE sending
+        synchronized (readySignalLock) {
+            this.lastSentMessageType = "IDERetrievalAnswer";
+            this.lastSentPayload = response;
+            this.lastSentToolId = toolData.identifier();
+            this.checkpointWhenSent = this.lastKnownCheckpoint;
+            this.messageInFlight = true;
+            this.messageRetryCount = 0; // Reset retry count for new message
+            logger.debug("Tracking in-flight tool response: toolId={}, checkpoint={}", 
+                         toolData.identifier(), this.checkpointWhenSent);
+        }
+
         // Reset the ready signal before sending the tool response to wait for the next READY from server
         resetReadySignal("tool response sent");
         logger.debug("Sending response from tool {}", response);
@@ -603,6 +736,17 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                 .toolId(toolData.identifier())
                 .answer(builder.build())
                 .build();
+
+        // Track this message as in-flight
+        synchronized (readySignalLock) {
+            this.lastSentMessageType = "IDERetrievalAnswer";
+            this.lastSentPayload = response;
+            this.lastSentToolId = toolData.identifier();
+            this.checkpointWhenSent = this.lastKnownCheckpoint;
+            this.messageInFlight = true;
+            this.messageRetryCount = 0; // Reset retry count for new message
+            logger.debug("Tracking in-flight failed tool response: toolId={}", toolData.identifier());
+        }
 
         // Reset the ready signal before sending the tool failed response to wait for the next READY from server
         resetReadySignal("tool failed response sent");
@@ -643,6 +787,16 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
         // Log the timeout for monitoring
         logger.info("Sending timeout error response for tool {} in session {} - suggesting shorter commands",
                     toolData.tool(), sessionId);
+
+        // Track this message as in-flight
+        synchronized (readySignalLock) {
+            this.lastSentMessageType = "IDERetrievalAnswer";
+            this.lastSentPayload = response;
+            this.lastSentToolId = toolData.identifier();
+            this.checkpointWhenSent = this.lastKnownCheckpoint;
+            this.messageInFlight = true;
+            this.messageRetryCount = 0; // Reset retry count for new message
+        }
 
         // Reset the ready signal before sending the response
         resetReadySignal("tool timeout response sent");
@@ -836,6 +990,228 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
         } catch (Exception e) {
             logger.debug("Service '{}' not found in application context for clazz {}", serviceName, clazz);
             throw new RuntimeException("Did not find service " + serviceName, e);
+        }
+    }
+
+    /**
+     * Evaluates whether to retry an in-flight message based on checkpoint comparison and retry limit.
+     * Only retries if server state hasn't advanced (checkpoint unchanged) and retry limit not exceeded.
+     *
+     * @param sessionId The session ID
+     * @param previousCheckpoint The checkpoint before reconnection
+     * @param currentCheckpoint The checkpoint received in READY after reconnection
+     */
+    private void evaluateAndRetryInFlightMessage(String sessionId, String previousCheckpoint, String currentCheckpoint) {
+        synchronized (readySignalLock) {
+            if (!messageInFlight || lastSentPayload == null) {
+                logger.debug("No in-flight message to retry for session: {}", sessionId);
+                return;
+            }
+
+            // Check retry limit (max 3 retries)
+            if (messageRetryCount >= MAX_MESSAGE_RETRIES) {
+                logger.error("Max message retry limit ({}) exceeded for session: {} - abandoning retry",
+                             MAX_MESSAGE_RETRIES, sessionId);
+                webSocketMetrics.recordMessageRetryExhausted();
+                clearInFlightState();
+                
+                // Complete ready signal exceptionally to propagate error
+                completeReadySignalExceptionally(new CommandException(
+                    "Max message retry limit exceeded after " + MAX_MESSAGE_RETRIES + " attempts"));
+                return;
+            }
+
+            // Compare checkpoints to detect if server state has advanced
+            boolean checkpointAdvanced = false;
+            String comparisonResult = "unchanged";
+            
+            if (checkpointWhenSent == null && currentCheckpoint != null) {
+                // Initial request - server has created a checkpoint, state advanced
+                checkpointAdvanced = true;
+                comparisonResult = "new_checkpoint_created";
+                logger.info("Server created new checkpoint {} after initial request - state advanced", 
+                            currentCheckpoint);
+            } else if (checkpointWhenSent != null && currentCheckpoint != null 
+                       && !checkpointWhenSent.equals(currentCheckpoint)) {
+                // Checkpoint changed - server processed something
+                checkpointAdvanced = true;
+                comparisonResult = "checkpoint_changed";
+                logger.info("Checkpoint changed from {} to {} - server state advanced, skipping retry",
+                            checkpointWhenSent, currentCheckpoint);
+            } else if (checkpointWhenSent != null && checkpointWhenSent.equals(currentCheckpoint)) {
+                // Checkpoint unchanged - safe to retry
+                comparisonResult = "checkpoint_unchanged";
+                logger.info("Checkpoint unchanged ({}) - safe to retry in-flight message", currentCheckpoint);
+            }
+
+            // Record checkpoint comparison metric
+            webSocketMetrics.recordCheckpointComparison(comparisonResult);
+
+            if (checkpointAdvanced) {
+                // Server has advanced - don't retry to avoid duplicates
+                logger.info("Skipping retry for session {} - server state has advanced (checkpoint: {} -> {})",
+                            sessionId, checkpointWhenSent, currentCheckpoint);
+                webSocketMetrics.recordMessageRetrySkipped("checkpoint_advanced");
+                clearInFlightState();
+                return;
+            }
+
+            // Safe to retry - increment retry count
+            messageRetryCount++;
+            logger.info("Retrying in-flight message for session: {}, type: {}, toolId: {}, attempt: {}/{}",
+                        sessionId, lastSentMessageType, lastSentToolId, messageRetryCount, MAX_MESSAGE_RETRIES);
+            
+            retryInFlightMessage(sessionId);
+        }
+    }
+
+    /**
+     * Clears the in-flight message tracking state.
+     */
+    private void clearInFlightState() {
+        this.messageInFlight = false;
+        this.lastSentPayload = null;
+        this.lastSentMessageType = null;
+        this.lastSentToolId = null;
+        this.checkpointWhenSent = null;
+        this.messageRetryCount = 0;
+    }
+
+    /**
+     * Retries the in-flight message after reconnection.
+     * Should only be called after checkpoint validation confirms retry is safe.
+     *
+     * @param sessionId The session ID to send the retry to
+     */
+    private void retryInFlightMessage(String sessionId) {
+        if (lastSentPayload == null) {
+            logger.warn("No payload to retry for session: {}", sessionId);
+            clearInFlightState();
+            return;
+        }
+
+        try {
+            if ("IDERetrievalAnswer".equals(lastSentMessageType)) {
+                logger.info("Retrying tool response for session: {}, toolId: {}, attempt: {}/{}", 
+                            sessionId, lastSentToolId, messageRetryCount, MAX_MESSAGE_RETRIES);
+                
+                // Reset ready signal before retry (we'll wait for next READY)
+                resetReadySignal("retrying tool response after reconnection");
+                
+                // Update checkpoint tracking for the retry
+                this.checkpointWhenSent = this.lastKnownCheckpoint;
+                
+                // Re-send the tool response
+                webSocketService.sendObject(WireMsgRouteKey.IDERetrievalAnswer, sessionId, lastSentPayload);
+                
+                // Record successful retry attempt
+                webSocketMetrics.recordMessageRetryAttempt("IDERetrievalAnswer");
+                
+                logger.info("Successfully re-sent tool response for session: {}", sessionId);
+                
+            } else if ("UserQuery".equals(lastSentMessageType)) {
+                logger.info("Retrying user query for session: {}, attempt: {}/{}", 
+                            sessionId, messageRetryCount, MAX_MESSAGE_RETRIES);
+                
+                // Reset ready signal before retry
+                resetReadySignal("retrying user query after reconnection");
+                
+                // Update checkpoint tracking for the retry
+                this.checkpointWhenSent = this.lastKnownCheckpoint;
+                
+                // Re-send the user query
+                webSocketService.sendObject(WireMsgRouteKey.UserQuery, sessionId, lastSentPayload);
+                
+                // Record successful retry attempt
+                webSocketMetrics.recordMessageRetryAttempt("UserQuery");
+                
+                logger.info("Successfully re-sent user query for session: {}", sessionId);
+                
+            } else {
+                logger.warn("Unknown message type for retry: {} - clearing in-flight state", lastSentMessageType);
+                clearInFlightState();
+            }
+            
+        } catch (Exception e) {
+            logger.error("Failed to retry in-flight message for session: {} - {}", sessionId, e.getMessage(), e);
+            
+            // Record retry failure
+            webSocketMetrics.recordMessageRetryFailure(lastSentMessageType);
+            
+            clearInFlightState();
+            
+            // Complete ready signal exceptionally to propagate error
+            completeReadySignalExceptionally(new CommandException("Failed to retry message: " + e.getMessage(), e));
+        }
+    }
+
+    /**
+     * Schedules a session timeout task that will terminate the session if it exceeds the configured duration.
+     * This prevents sessions from running indefinitely and consuming resources.
+     * 
+     * <p>When the timeout is triggered, this method performs several cleanup actions:
+     * <ul>
+     *   <li>Records a session timeout metric for monitoring</li>
+     *   <li>Completes the ready signal exceptionally to propagate the error through the CompletableFuture chain</li>
+     *   <li>Counts down the completion latch to unblock the waiting thread in process()</li>
+     *   <li>Disconnects the WebSocket connection to free resources</li>
+     * </ul>
+     * 
+     * <p>These additional actions beyond the plan ensure proper error propagation and resource cleanup,
+     * preventing the session from hanging indefinitely and allowing the JMS transaction to complete appropriately.
+     */
+    private void scheduleSessionTimeout() {
+        sessionStartTime = Instant.now();
+        long timeoutSeconds = qodoProperties.getWebsocket().getTotalSessionTimeoutSeconds();
+        
+        sessionTimeoutTask = sessionScheduler.schedule(() -> {
+            Duration sessionDuration = Duration.between(sessionStartTime, Instant.now());
+            logger.error("Session timeout exceeded for session: {} - session has been running for {}s (limit: {}s)",
+                         commandSession != null ? commandSession.sessionId() : "unknown",
+                         sessionDuration.toSeconds(), timeoutSeconds);
+            
+            // Record session timeout metric
+            webSocketMetrics.recordSessionTimeout();
+            
+            // Complete ready signal exceptionally to propagate timeout error
+            // This ensures the error flows through the CompletableFuture chain to the process() method
+            completeReadySignalExceptionally(new CommandException(
+                String.format("Session timeout exceeded - session ran for %ds (limit: %ds)", 
+                              sessionDuration.toSeconds(), timeoutSeconds)));
+            
+            // Count down completion latch to unblock waiting thread
+            // This prevents the process() method from hanging indefinitely
+            completionLatch.countDown();
+            
+            // Disconnect WebSocket if still connected
+            // This ensures proper resource cleanup and prevents connection leaks
+            if (commandSession != null) {
+                try {
+                    webSocketService.disconnectSession(commandSession.sessionId(), 1000, "Session timeout");
+                } catch (Exception e) {
+                    logger.warn("Error disconnecting session after timeout: {}", commandSession.sessionId(), e);
+                }
+            }
+        }, timeoutSeconds, TimeUnit.SECONDS);
+        
+        logger.debug("Scheduled session timeout for session: {} in {}s", 
+                     commandSession != null ? commandSession.sessionId() : "unknown", timeoutSeconds);
+    }
+
+    /**
+     * Cancels the session timeout task if it's still pending.
+     * Should be called when the session completes normally (ENDNODE received).
+     */
+    private void cancelSessionTimeout() {
+        if (sessionTimeoutTask != null && !sessionTimeoutTask.isDone()) {
+            boolean cancelled = sessionTimeoutTask.cancel(false);
+            if (cancelled) {
+                Duration sessionDuration = sessionStartTime != null ? 
+                    Duration.between(sessionStartTime, Instant.now()) : Duration.ZERO;
+                logger.debug("Cancelled session timeout for session: {} after {}s", 
+                             commandSession != null ? commandSession.sessionId() : "unknown",
+                             sessionDuration.toSeconds());
+            }
         }
     }
 

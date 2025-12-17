@@ -96,6 +96,9 @@ public class WebSocketService {
     private volatile Consumer<String> lastErrorHandler;
     // Track the current connection future for exception propagation
     private volatile CompletableFuture<WebSocket> connectionFuture;
+    // Reconnection callbacks for notification service integration
+    private volatile Runnable reconnectionStartCallback;
+    private volatile Runnable reconnectionSuccessCallback;
     // Meter references for cleanup
     private Meter.Id connectionStatusMeterId;
     private Meter.Id lastPongAgeMeterId;
@@ -244,7 +247,7 @@ public class WebSocketService {
      */
     public CompletableFuture<WebSocket> connect(CommandSession session, String token,
                                                 Consumer<TaskResponse> messageHandler, Consumer<String> errorHandler) {
-        return connect(session, token, messageHandler, errorHandler, null, false);
+        return connect(session, token, messageHandler, errorHandler, null, null, false);
     }
 
     /**
@@ -256,7 +259,27 @@ public class WebSocketService {
     public CompletableFuture<WebSocket> connect(CommandSession session, String token,
                                                 Consumer<TaskResponse> messageHandler, Consumer<String> errorHandler,
                                                 Runnable reconnectionCallback) {
-        return connect(session, token, messageHandler, errorHandler, reconnectionCallback, false);
+        return connect(session, token, messageHandler, errorHandler, reconnectionCallback, null, false);
+    }
+
+    /**
+     * Establishes a WebSocket connection with reconnection callbacks.
+     *
+     * @param session The command session
+     * @param token Authentication token
+     * @param messageHandler Handler for incoming messages
+     * @param errorHandler Handler for errors
+     * @param reconnectionStartCallback Called when reconnection is about to start
+     * @param reconnectionSuccessCallback Called when reconnection succeeds
+     * @return CompletableFuture that completes when connection is established
+     */
+    public CompletableFuture<WebSocket> connect(CommandSession session, String token,
+                                                Consumer<TaskResponse> messageHandler, Consumer<String> errorHandler,
+                                                Runnable reconnectionStartCallback,
+                                                Runnable reconnectionSuccessCallback) {
+        this.reconnectionStartCallback = reconnectionStartCallback;
+        this.reconnectionSuccessCallback = reconnectionSuccessCallback;
+        return connect(session, token, messageHandler, errorHandler, reconnectionStartCallback, reconnectionSuccessCallback, false);
     }
 
     /**
@@ -266,7 +289,9 @@ public class WebSocketService {
      */
     private CompletableFuture<WebSocket> connect(CommandSession session, String token,
                                                  Consumer<TaskResponse> messageHandler, Consumer<String> errorHandler,
-                                                 Runnable reconnectionCallback, boolean isReconnect) {
+                                                 Runnable reconnectionStartCallback,
+                                                 Runnable reconnectionSuccessCallback,
+                                                 boolean isReconnect) {
 
         // Check circuit breaker before attempting connection
         if (!circuitBreaker.shouldAttemptConnection()) {
@@ -713,6 +738,17 @@ public class WebSocketService {
                     throw new CommandException("Cannot reconnect - no session context available");
                 }
 
+                // *** NEW: Invoke reconnection start callback ***
+                if (reconnectionStartCallback != null) {
+                    try {
+                        logger.debug("[{}] Invoking reconnection start callback before attempt {}/{}", 
+                                     instanceId, attempts, maxAttemptsInner);
+                        reconnectionStartCallback.run();
+                    } catch (Exception e) {
+                        logger.warn("[{}] Reconnection start callback failed", instanceId, e);
+                    }
+                }
+
                 // Create new session with fresh request ID for this reconnection attempt
                 CommandSession reconnectSession = CommandSessionBuilder
                         .fromSessionWithNewRequestId(lastSession)
@@ -726,13 +762,24 @@ public class WebSocketService {
                 lastSession = reconnectSession;
 
                 // Pass true for isReconnect to include checkpoint_id in URL
-                connect(reconnectSession, lastToken, lastMessageHandler, lastErrorHandler, null, true)
+                connect(reconnectSession, lastToken, lastMessageHandler, lastErrorHandler, 
+                        reconnectionStartCallback, reconnectionSuccessCallback, true)
                         .thenAccept(ws -> {
                             if (ws != null && !ws.isInputClosed() && !ws.isOutputClosed()) {
                                 logger.info("[{}] Successfully reconnected on attempt {}/{}", instanceId, attempts,
                                             maxAttemptsInner);
                                 reconnectAttempts.set(0);
                                 reconnecting.set(false);
+                                
+                                // *** NEW: Invoke reconnection success callback ***
+                                if (reconnectionSuccessCallback != null) {
+                                    try {
+                                        logger.debug("[{}] Invoking reconnection success callback", instanceId);
+                                        reconnectionSuccessCallback.run();
+                                    } catch (Exception e) {
+                                        logger.warn("[{}] Reconnection success callback failed", instanceId, e);
+                                    }
+                                }
                             } else {
                                 // Connection failed, will retry or throw
                                 reconnecting.set(false);

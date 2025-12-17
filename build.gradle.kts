@@ -67,6 +67,9 @@ dependencies {
     api("org.springframework.boot:spring-boot-starter-activemq")
     api("jakarta.jms:jakarta.jms-api")
 
+    // Kafka dependencies
+    api("org.springframework.kafka:spring-kafka")
+
     // Jakarta Servlet API
     api("jakarta.servlet:jakarta.servlet-api")
 

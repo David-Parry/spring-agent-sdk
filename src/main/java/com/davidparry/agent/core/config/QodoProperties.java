@@ -68,6 +68,7 @@ public class QodoProperties {
         private long pongTimeoutSeconds = 10;
         private long connectionTimeoutSeconds = 60;
         private long readySignalTimeoutSeconds = 30;
+        private long totalSessionTimeoutSeconds = 1800; // 30 minutes default
         private int maxReconnectAttempts = 3;
         private Duration initialReconnectDelay = Duration.ofSeconds(1);
         private Duration maxReconnectDelay = Duration.ofSeconds(10);
@@ -134,6 +135,14 @@ public class QodoProperties {
 
         public void setReadySignalTimeoutSeconds(long readySignalTimeoutSeconds) {
             this.readySignalTimeoutSeconds = readySignalTimeoutSeconds;
+        }
+
+        public long getTotalSessionTimeoutSeconds() {
+            return totalSessionTimeoutSeconds;
+        }
+
+        public void setTotalSessionTimeoutSeconds(long totalSessionTimeoutSeconds) {
+            this.totalSessionTimeoutSeconds = totalSessionTimeoutSeconds;
         }
     }
 

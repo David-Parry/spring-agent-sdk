@@ -33,8 +33,8 @@ class StringConstantsTest {
     
     @Test
     void testTypeValue() {
-        assertEquals("type", StringConstants.TYPE.getValue());
-        assertEquals("type", StringConstants.TYPE.toString());
+        assertEquals("messageType", StringConstants.MESSAGE_TYPE.getValue());
+        assertEquals("messageType", StringConstants.MESSAGE_TYPE.toString());
     }
     
     @Test

@@ -16,10 +16,10 @@ qodo:
     # Health check configuration
     # How often to send ping messages to verify connection health
     # Reduced from 30s to 15s for faster connection issue detection
-    ping-interval-seconds: ${QODO_WS_PING_INTERVAL_SECONDS:15}
+    ping-interval-seconds: ${QODO_WS_PING_INTERVAL_SECONDS:35}
     # Maximum time to wait for pong response before considering connection dead
     # Reduced from 10s to 5s for faster failure detection
-    pong-timeout-seconds: ${QODO_WS_PONG_TIMEOUT_SECONDS:5}
+    pong-timeout-seconds: ${QODO_WS_PONG_TIMEOUT_SECONDS:18}
 
     # Connection timeout configuration
     # Maximum time to establish initial WebSocket connection
@@ -35,6 +35,11 @@ qodo:
     initial-reconnect-delay: ${QODO_WS_INITIAL_RECONNECT_DELAY:1s}
     # Maximum delay between reconnection attempts (with exponential backoff)
     max-reconnect-delay: ${QODO_WS_MAX_RECONNECT_DELAY:30s}
+
+    # Session timeout configuration
+    # Maximum total duration for a WebSocket session (prevents runaway sessions)
+    # Default: 1800 seconds (30 minutes)
+    total-session-timeout-seconds: ${QODO_WS_TOTAL_SESSION_TIMEOUT_SECONDS:1800}
 
 # Messaging configuration
 messaging:
@@ -62,6 +67,40 @@ messaging:
     poll-timeout-seconds: ${LOCAL_POLL_TIMEOUT_SECONDS:5}
     # Whether to use exponential backoff for retries
     exponential-backoff: ${LOCAL_EXPONENTIAL_BACKOFF:true}
+  kafka:
+    # Connection settings
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    group-id: ${KAFKA_GROUP_ID:qodo-agent-group}
+    # Consumer settings
+    auto-offset-reset: ${KAFKA_AUTO_OFFSET_RESET:earliest}
+    enable-auto-commit: ${KAFKA_ENABLE_AUTO_COMMIT:false}
+    max-poll-records: ${KAFKA_MAX_POLL_RECORDS:500}
+    session-timeout-ms: ${KAFKA_SESSION_TIMEOUT_MS:30000}
+    heartbeat-interval-ms: ${KAFKA_HEARTBEAT_INTERVAL_MS:10000}
+    request-timeout-ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
+    # Maximum time between poll() calls before consumer is considered dead and removed from group
+    # Must be greater than the maximum expected message processing time (WebSocket session timeout)
+    # Default: 1860000ms (31 minutes) - slightly longer than 30-minute session timeout
+    max-poll-interval-ms: ${KAFKA_MAX_POLL_INTERVAL_MS:1860000}
+    # Producer settings
+    retries: ${KAFKA_RETRIES:3}
+    acks: ${KAFKA_ACKS:all}
+    linger-ms: ${KAFKA_LINGER_MS:1}
+    batch-size: ${KAFKA_BATCH_SIZE:16384}
+    buffer-memory: ${KAFKA_BUFFER_MEMORY:33554432}
+    # Security settings (SSL/SASL) - disabled by default
+    security:
+      enabled: ${KAFKA_SECURITY_ENABLED:false}
+      protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
+      # SSL settings
+      truststore-location: ${KAFKA_SSL_TRUSTSTORE_LOCATION:}
+      truststore-password: ${KAFKA_SSL_TRUSTSTORE_PASSWORD:}
+      keystore-location: ${KAFKA_SSL_KEYSTORE_LOCATION:}
+      keystore-password: ${KAFKA_SSL_KEYSTORE_PASSWORD:}
+      key-password: ${KAFKA_SSL_KEY_PASSWORD:}
+      # SASL settings
+      sasl-mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
+      sasl-jaas-config: ${KAFKA_SASL_JAAS_CONFIG:}
 
 # Server configuration
 server:
