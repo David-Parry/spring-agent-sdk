@@ -23,13 +23,6 @@ public interface MessagePublisher {
      */
     void publishResponse(String message);
 
+    void publishEvent(String message);
 
-
-    /**
-     * Publishes a message to a specific topic.
-     * 
-     * @param topic The topic to publish to
-     * @param message The message to publish
-     */
-    void publish(String topic, String message);
 }

@@ -21,20 +21,16 @@ import java.util.Map;
  * Reports the health status of local queues including queue sizes and capacity.
  */
 @Component
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "local")
 public class LocalQueueHealthIndicator implements HealthIndicator {
     
     private final LocalQueueService queueService;
     private final LocalMessageConsumer messageConsumer;
-    private final LocalQueueProperties properties;
     
     public LocalQueueHealthIndicator(
             LocalQueueService queueService,
-            LocalMessageConsumer messageConsumer,
-            LocalQueueProperties properties) {
+            LocalMessageConsumer messageConsumer) {
         this.queueService = queueService;
         this.messageConsumer = messageConsumer;
-        this.properties = properties;
     }
     
     @Override
@@ -52,11 +48,12 @@ public class LocalQueueHealthIndicator implements HealthIndicator {
             
             // Get queue statistics
             Map<String, Map<String, Object>> queueStats = new HashMap<>();
+            int capacity = queueService.getQueueCapacity();
+            
             for (String queueName : queueService.getQueueNames()) {
                 Map<String, Object> stats = new HashMap<>();
                 int size = queueService.getQueueSize(queueName);
                 int remaining = queueService.getRemainingCapacity(queueName);
-                int capacity = properties.getQueueCapacity();
                 
                 stats.put("size", size);
                 stats.put("capacity", capacity);
@@ -66,6 +63,16 @@ public class LocalQueueHealthIndicator implements HealthIndicator {
                 queueStats.put(queueName, stats);
             }
             details.put("queues", queueStats);
+            
+            // Add adaptive capacity information
+            AdaptiveQueueCapacity adaptiveCapacity = queueService.getAdaptiveCapacity();
+            Map<String, Object> capacityInfo = new HashMap<>();
+            capacityInfo.put("currentCapacity", capacity);
+            capacityInfo.put("minCapacity", adaptiveCapacity.getMinCapacity());
+            capacityInfo.put("maxCapacity", adaptiveCapacity.getMaxCapacity());
+            capacityInfo.put("heapUtilization", String.format("%.2f%%", adaptiveCapacity.getCurrentHeapUtilization() * 100));
+            capacityInfo.put("memoryPressureHigh", adaptiveCapacity.isMemoryPressureHigh());
+            details.put("adaptiveCapacity", capacityInfo);
             
             // Get active queues from consumer
             details.put("activeQueues", messageConsumer.getActiveQueues());

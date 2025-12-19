@@ -10,6 +10,7 @@ package com.davidparry.agent.core.mcp;
 
 import com.davidparry.agent.core.api.CommandArgument;
 import com.davidparry.agent.core.api.OutputSchema;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.List;
@@ -30,7 +31,9 @@ import java.util.List;
  * @param version The version of the command
  * @param name The name of the command
  * @param mcpConfig The MCP configuration object
+ * @param next The next command to execute in the workflow
  */
+@JsonIgnoreProperties(ignoreUnknown = true)
 public record AgentCommand(
     String description,
     String instructions,
@@ -45,8 +48,8 @@ public record AgentCommand(
     String systemPrompt,
     String version,
     String name,
-    McpConfig mcpConfig
-
+    McpConfig mcpConfig,
+    @JsonProperty(value = "next", required = false) String next
 ) {
     /**
      * Constructor overload that takes an AgentCommand and an OutputSchema and copies all their fields
@@ -68,7 +71,8 @@ public record AgentCommand(
             agentCommand.executionStrategy(),
             agentCommand.outputSchemaString(),
             agentCommand.exitExpression(),
-            outputSchema, systemPrompt, version, name, mcpConfig
+            outputSchema, systemPrompt, version, name, mcpConfig,
+            agentCommand.next()
         );
     }
 }

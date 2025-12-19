@@ -24,7 +24,6 @@ import java.util.concurrent.CompletableFuture;
  * This implementation is activated when messaging.provider is set to "local".
  */
 @Service
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "local")
 public class LocalMessagePublisher implements MessagePublisher {
     
     private static final Logger logger = LoggerFactory.getLogger(LocalMessagePublisher.class);
@@ -42,9 +41,14 @@ public class LocalMessagePublisher implements MessagePublisher {
     public void publishResponse(String message) {
         publish(messagingProperties.getQueue().getResponse(), message);
     }
-    
-    @Override
-    public void publish(String topic, String message) {
+
+   @Override
+    public void publishEvent(String message) {
+        publish(messagingProperties.getQueue().getEvent(), message);
+    }
+
+
+    protected void publish(String topic, String message) {
         // Publish asynchronously to ensure thread separation from consumer
         CompletableFuture.runAsync(() -> {
             try {

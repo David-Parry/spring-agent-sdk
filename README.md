@@ -14,7 +14,6 @@ Agent SDK is an enterprise-grade framework that bridges the gap between external
 - **Event-Driven Architecture**: Receive webhooks from external services and transform them into AI agent tasks
 - **AI Agent Orchestration**: Execute sophisticated AI workflows using Claude, GPT-4, or other LLMs
 - **MCP Integration**: Connect to any tool or service through the Model Context Protocol
-- **Enterprise Messaging**: Built-in ActiveMQ support for reliable, scalable event processing
 - **Production Monitoring**: Comprehensive health checks, Prometheus metrics, and observability
 - **Extensible Framework**: Clear separation between framework code and customer customizations
 
@@ -37,7 +36,6 @@ Agent SDK is an enterprise-grade framework that bridges the gap between external
   - [Creating a Custom Handler](#creating-a-custom-handler)
   - [Adding a Scheduler](#adding-a-scheduler)
   - [Extending Agent Workflows](#extending-agent-workflows)
-- [Messaging System](#messaging-system)
 - [Technology Stack](#technology-stack)
 
 ---
@@ -139,7 +137,6 @@ Handlers are post-processing components that execute after an agent completes. T
 
 ✅ **Webhook Integration**: Receive and validate webhooks from external services (Snyk, Jira)  
 ✅ **AI Agent Orchestration**: Execute AI-powered workflows with configurable agents  
-✅ **Message Queue Integration**: ActiveMQ-based event processing with transaction support  
 ✅ **Handler Pattern**: Post-processing handlers for agent completion workflows  
 ✅ **MCP Client Integration**: Model Context Protocol client support for tool execution  
 ✅ **Spring Boot Best Practices**: Auto-configuration, health checks, virtual threads  
@@ -156,12 +153,7 @@ Handlers are post-processing components that execute after an agent completes. T
          │
          ▼
 ┌─────────────────┐
-│  Controllers    │ ← Validate, transform, publish to queue
-└────────┬────────┘
-         │
-         ▼
-┌─────────────────┐
-│  Message Queue  │ ← ActiveMQ (event, response, audit topics)
+│  Controllers    │ ← Validate, transform, route events
 └────────┬────────┘
          │
          ▼
@@ -222,7 +214,7 @@ This module contains the core framework code that **should NOT be modified** by 
 ## Getting Started
 
 Refer to GETTING_STARTED.md for step-by-step instructions to:
-- Run locally with the internal in-memory queue or with ActiveMQ via Docker
+- Run locally or with Docker
 - Configure and wire agents via agent.yml
 - Implement handlers and control chaining/termination
 - Trigger flows from events (e.g., webhooks)
@@ -234,7 +226,7 @@ Direct link:  [GETTING_STARTED.md](GETTING_STARTED.md)
 
 ## Docker
 
-For containerized deployment with ActiveMQ, Prometheus, and Grafana, see the Docker Compose stack in docker/docker-compose.yml. The full end-to-end steps and environment variable guidance are covered in GETTING_STARTED.md.
+For containerized deployment with Prometheus and Grafana, see the Docker Compose stack in docker/docker-compose.yml. The full end-to-end steps and environment variable guidance are covered in GETTING_STARTED.md.
 
 ---
 
@@ -246,85 +238,47 @@ See GETTING_STARTED.md for:
 - Output schema and exit expression guidance
 - MCP server configuration within agent.yml
 
-### Example Agent Scenarios
+---
 
-### 1. **Snyk Security Agent** (`snyk_agent`)
+## Agent Configuration File (agent.yml)
 
-**Purpose**: Analyzes and remediates security vulnerabilities detected by Snyk.
+The `agent.yml` file is the central configuration file that defines your AI agent workflows. It specifies the version, system prompt, and individual agent commands that the SDK will execute.
 
-**Triggers**: Snyk webhook events (new vulnerabilities)
+### File Structure
 
-**Capabilities**:
-- Analyzes vulnerability details (CVSS score, exploit maturity)
-- Provides remediation guidance (upgrade paths, patches)
-- Suggests temporary mitigations (WAF rules, configuration changes)
-- Creates validation plans and follow-up actions
-
-**Configuration**:
 ```yaml
-# Triggered by Snyk webhooks to /api/webhooks/snyk
-# Requires: SNYK_WEBHOOK_SECRET environment variable
+version: "1.0"                    # Configuration version
+system_prompt: "..."              # Global system prompt for all agents
+commands:                         # Map of agent command definitions
+  command_name:                   # Unique identifier for the agent
+    description: "..."            # Brief description of what the agent does
+    instructions: "..."           # Detailed instructions for the AI
+    model: "..."                  # AI model to use (e.g., claude-4.5-sonnet)
+    mcpServers: "..."             # MCP servers configuration (JSON string)
+    tools: [...]                  # Optional: List of allowed tools
+    output_schema: "..."          # JSON schema for structured output
+    next: "..."                   # Optional: Next command to chain
 ```
 
-### 2. **Jira Issue Agent** (`jira_agent`)
+### Configuration Fields
 
-**Purpose**: Analyzes Jira issues and ensures they have sufficient information for development.
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `version` | String | Yes | Configuration file version (currently "1.0") |
+| `system_prompt` | String | Yes | Global system prompt applied to all agents |
+| `commands` | Map | Yes | Map of command names to agent configurations |
 
-**Triggers**: Jira webhook events or manual trigger
+### Command Fields
 
-**Capabilities**:
-- Retrieves and analyzes Jira issue details
-- Reviews comments and attachments
-- Identifies missing information
-- Adds clarifying questions as comments
-- Updates issue status when ready for development
-
-**Configuration**:
-```yaml
-# Triggered by Jira webhooks to /api/webhooks/jira/{issueKey}
-# Requires: ATLASSIAN_EMAIL, ATLASSIAN_SITE_URL, ATLASSIAN_API_TOKEN
-```
-
-### 3. **Coding Agent** (`coding_agent`)
-
-**Purpose**: Automatically fixes bugs based on Jira tickets.
-
-**Triggers**: Follows after Jira Issue Agent when issue is ready
-
-**Capabilities**:
-- Clones the repository from Jira issue
-- Creates a feature branch
-- Analyzes code to find root cause
-- Implements and tests the fix
-- Commits and pushes changes
-- Documents the fix in Markdown
-
-**Configuration**:
-```yaml
-# Triggered after jira_agent completes
-# Requires: GIT_SSH_PRIVATE_KEY for repository access
-```
-
-### Agent Workflow Example
-
-```mermaid
-graph LR
-    A[Jira Webhook] --> B[Jira Agent]
-    B --> C{Issue Ready?}
-    C -->|Yes| D[Bug Coding Agent]
-    C -->|No| E[Add Questions]
-    D --> F[Fix Branch Created]
-    F --> G[Handler Notifies Team]
-```
-
-### Customizing Pre-Built Agents
-
-Edit `agent.yml` to customize:
-- **Model**: Change from `claude-4.5-sonnet` to other models
-- **Instructions**: Modify the agent's behavior
-- **Output Schema**: Change the structured output format
-- **MCP Servers**: Add or remove tool access
-- **Exit Expression**: Modify completion conditions
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `description` | String | Yes | Brief description of the agent's purpose |
+| `instructions` | String | Yes | Detailed instructions for the AI agent |
+| `model` | String | Yes | AI model identifier (e.g., "claude-4.5-sonnet", "gpt-4") |
+| `mcpServers` | String (JSON) | Yes | JSON string defining MCP servers configuration |
+| `tools` | List<String> | No | Optional list of allowed tools |
+| `output_schema` | String (JSON) | Yes | JSON schema defining expected output structure |
+| `next` | String | No | Optional name of next command to chain |
 
 ---
 
@@ -1011,6 +965,7 @@ commands:
       }
     
     exit_expression: "success"
+    next: "code_review_agent"  # Optional: Chain to another agent
 ```
 
 #### Step 2: Create the Handler
@@ -1034,46 +989,7 @@ messagePublisher.publishEvent(objectMapper.writeValueAsString(payload));
 
 ## Configuration
 
-See GETTING_STARTED.md for application properties, environment variables, and MCP timeout guidance. The defaults for messaging, ports, and MCP are set in internal-core/src/main/resources/application-internal.yml and can be overridden in app/src/main/resources/application.yml or via environment variables.
-
----
-
-## Messaging System
-
-The application uses a message queue (ActiveMQ) for event-driven architecture:
-
-### Topics
-
-1. **Event Topic** (`messaging.queue.event`): Incoming events from webhooks/schedulers
-2. **Response Topic** (`messaging.queue.response`): Agent completion results
-3. **Audit Topic** (`messaging.queue.audit`): Audit logs
-
-### Publishing Messages
-
-```java
-@Autowired
-private MessagePublisher messagePublisher;
-
-// Publish to event queue
-messagePublisher.publishEvent(jsonMessage);
-
-// Publish to response queue
-messagePublisher.publishResponse(jsonMessage);
-
-```
-
-### Message Format
-
-```json
-{
-  "type": "agent_type",
-  "EventKey": "unique_event_id",
-  "timestamp": 1234567890,
-  "data": {
-    // Event-specific data
-  }
-}
-```
+See GETTING_STARTED.md for application properties, environment variables, and MCP timeout guidance. The defaults for ports and MCP are set in internal-core/src/main/resources/application-internal.yml and can be overridden in app/src/main/resources/application.yml or via environment variables.
 
 ---
 
@@ -1083,6 +999,116 @@ messagePublisher.publishResponse(jsonMessage);
   - `./gradlew test`
   - `./gradlew integrationTest`
 - Webhook testing examples are consolidated in GETTING_STARTED.md.
+
+---
+
+## Deployment
+
+The project uses [JReleaser](https://jreleaser.org/) to automate deployment to Maven Central via Sonatype.
+
+### Deploying to Maven Central
+
+To deploy a release to Maven Central, run:
+
+```bash
+./gradlew publish jreleaserDeploy
+```
+
+This command performs the following steps:
+1. **Build and Package**: Compiles the project and creates JAR files (including sources and javadoc)
+2. **Publish to Staging**: Publishes artifacts to the local staging repository at `build/staging-deploy`
+3. **Sign Artifacts**: Signs all artifacts using GPG (configured in `jreleaser.yml`)
+4. **Deploy to Maven Central**: Uploads signed artifacts to Maven Central via Sonatype's API
+
+### Prerequisites
+
+Before deploying, ensure you have the following configured:
+
+#### 1. GPG Signing Key
+
+JReleaser is configured to always sign artifacts. You need:
+- A GPG key pair generated and available on your system
+- The GPG passphrase (if your key is protected)
+
+Set the GPG passphrase as an environment variable:
+```bash
+export JRELEASER_GPG_PASSPHRASE="your-gpg-passphrase"
+```
+
+#### 2. Sonatype Credentials
+
+You need valid Sonatype credentials for Maven Central deployment:
+
+```bash
+export JRELEASER_MAVENCENTRAL_SONATYPE_USERNAME="your-sonatype-username"
+export JRELEASER_MAVENCENTRAL_SONATYPE_PASSWORD="your-sonatype-password"
+```
+
+To obtain Sonatype credentials:
+1. Create an account at [Sonatype Central Portal](https://central.sonatype.com/)
+2. Generate a user token for API access
+3. Use the token as your username and password
+
+#### 3. Version Configuration
+
+The project version is configured in `gradle.properties`:
+```properties
+version=<your-version>
+```
+
+Update this version before each release according to [Semantic Versioning](https://semver.org/).
+
+### Dry Run
+
+To test the deployment process without actually publishing:
+
+```bash
+./gradlew publish jreleaserDeploy --dry-run
+```
+
+This validates your configuration and shows what would be deployed without making any changes.
+
+### Configuration Files
+
+The deployment is configured in two files:
+
+- **`jreleaser.yml`**: JReleaser configuration for signing and Maven Central deployment
+- **`build.gradle.kts`**: Gradle publishing configuration and artifact metadata
+
+### Troubleshooting Deployment
+
+**GPG Signing Issues:**
+- Ensure GPG is installed: `gpg --version`
+- List your keys: `gpg --list-secret-keys`
+- Export your key if needed: `gpg --export-secret-keys > private-key.gpg`
+
+**Sonatype Authentication Errors:**
+- Verify credentials are correct
+- Ensure your Sonatype account has publishing rights for the `com.davidparry.agent` group
+- Check that your token hasn't expired
+
+**Build Failures:**
+- Run `./gradlew clean` before deploying
+- Ensure all tests pass: `./gradlew test`
+- Verify the staging directory exists: `ls -la build/staging-deploy`
+
+**Timeout Issues:**
+- JReleaser is configured with 30s connect timeout and 120s read timeout
+- For slow connections, these can be adjusted in `jreleaser.yml`
+
+### Release Checklist
+
+Before deploying a new version:
+
+- [ ] Update version in `gradle.properties`
+- [ ] Update `CHANGELOG.md` with release notes
+- [ ] Run all tests: `./gradlew test integrationTest`
+- [ ] Verify GPG key is available and passphrase is set
+- [ ] Verify Sonatype credentials are configured
+- [ ] Run dry-run to validate: `./gradlew publish jreleaserDeploy --dry-run`
+- [ ] Deploy: `./gradlew publish jreleaserDeploy`
+- [ ] Tag the release in Git: `git tag v2.1.0 && git push origin v2.1.0`
+- [ ] Verify artifact appears on [Maven Central](https://central.sonatype.com/)
 
 ---
 
@@ -1118,7 +1144,6 @@ Operational troubleshooting and environment guidance are centralized in GETTING_
 
 - [Spring Boot Documentation](https://spring.io/projects/spring-boot)
 - [Spring Scheduling](https://spring.io/guides/gs/scheduling-tasks/)
-- [ActiveMQ Documentation](https://activemq.apache.org/)
 - [Model Context Protocol](https://modelcontextprotocol.io/)
 
 ---
@@ -1131,8 +1156,7 @@ Operational troubleshooting and environment guidance are centralized in GETTING_
 - **Spring AI 1.0.1**: AI/LLM integration framework
 - **Gradle 8.13**: Build automation tool
 
-### Messaging & Integration
-- **Apache ActiveMQ 6.1.4**: Message broker for event-driven architecture
+### Integration
 - **Spring Integration**: Enterprise integration patterns
 - **WebSocket (OkHttp3)**: Real-time bidirectional communication
 

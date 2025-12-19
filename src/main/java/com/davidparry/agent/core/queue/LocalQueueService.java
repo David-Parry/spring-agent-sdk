@@ -28,18 +28,21 @@ import java.util.concurrent.TimeUnit;
  * Activated when messaging.provider is set to "local".
  */
 @Service
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "local")
 public class LocalQueueService {
     
     private static final Logger logger = LoggerFactory.getLogger(LocalQueueService.class);
     
     private final Map<String, BlockingQueue<String>> queues = new ConcurrentHashMap<>();
-    private final LocalQueueProperties properties;
+    private final AdaptiveQueueCapacity adaptiveCapacity;
+    private final int queueCapacity;
     private volatile boolean shutdown = false;
     
-    public LocalQueueService(LocalQueueProperties properties) {
-        this.properties = properties;
-        logger.info("LocalQueueService initialized with capacity: {}", properties.getQueueCapacity());
+    public LocalQueueService(AdaptiveQueueCapacity adaptiveCapacity) {
+        this.adaptiveCapacity = adaptiveCapacity;
+        this.queueCapacity = adaptiveCapacity.calculateCapacity();
+        logger.info("LocalQueueService initialized with adaptive capacity: {}", queueCapacity);
+        logger.info("Capacity will automatically adjust based on JVM heap (min: {}, max: {})", 
+                   adaptiveCapacity.getMinCapacity(), adaptiveCapacity.getMaxCapacity());
     }
     
     /**
@@ -50,8 +53,8 @@ public class LocalQueueService {
      */
     public BlockingQueue<String> getQueue(String queueName) {
         return queues.computeIfAbsent(queueName, name -> {
-            logger.info("Creating new local queue: {} with capacity: {}", name, properties.getQueueCapacity());
-            return new LinkedBlockingQueue<>(properties.getQueueCapacity());
+            logger.info("Creating new local queue: {} with adaptive capacity: {}", name, queueCapacity);
+            return new LinkedBlockingQueue<>(queueCapacity);
         });
     }
     
@@ -77,7 +80,7 @@ public class LocalQueueService {
                 logger.debug("Message enqueued to queue '{}'. Current size: {}", queueName, queue.size());
             } else {
                 logger.warn("Failed to enqueue message to queue '{}' - queue may be full (capacity: {})", 
-                           queueName, properties.getQueueCapacity());
+                           queueName, queueCapacity);
             }
             
             return offered;
@@ -133,7 +136,25 @@ public class LocalQueueService {
      */
     public int getRemainingCapacity(String queueName) {
         BlockingQueue<String> queue = queues.get(queueName);
-        return queue != null ? queue.remainingCapacity() : properties.getQueueCapacity();
+        return queue != null ? queue.remainingCapacity() : queueCapacity;
+    }
+    
+    /**
+     * Gets the configured queue capacity.
+     * 
+     * @return The queue capacity
+     */
+    public int getQueueCapacity() {
+        return queueCapacity;
+    }
+    
+    /**
+     * Gets the adaptive capacity calculator.
+     * 
+     * @return The adaptive capacity component
+     */
+    public AdaptiveQueueCapacity getAdaptiveCapacity() {
+        return adaptiveCapacity;
     }
     
     /**

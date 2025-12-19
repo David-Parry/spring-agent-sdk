@@ -19,10 +19,8 @@ import org.springframework.context.annotation.Configuration;
 @ConfigurationProperties(prefix = "messaging")
 public class MessagingProperties {
     
-    private String provider = "in-memory";
+    private String provider = "local";
     private final Queue queue = new Queue();
-    private final ActiveMq activemq = new ActiveMq();
-    private final Kafka kafka = new Kafka();
     
     public String getProvider() {
         return provider;
@@ -35,19 +33,10 @@ public class MessagingProperties {
     public Queue getQueue() {
         return queue;
     }
-    
-    public ActiveMq getActivemq() {
-        return activemq;
-    }
-    
-    public Kafka getKafka() {
-        return kafka;
-    }
-    
+
     public static class Queue {
         private String event = "event";
         private String response = "response";
-        private String audit = "audit";
 
         public String getEvent() {
             return event;
@@ -65,43 +54,6 @@ public class MessagingProperties {
             this.response = response;
         }
 
-        public String getAudit() {
-            return audit;
-        }
-
-        public void setAudit(String audit) {
-            this.audit = audit;
-        }
-    }
-    
-    public static class ActiveMq {
-        private String brokerUrl = "tcp://localhost:61616";
-        private String username = "CHANGEME";
-        private String password = "CHANGEME";
-        
-        public String getBrokerUrl() {
-            return brokerUrl;
-        }
-        
-        public void setBrokerUrl(String brokerUrl) {
-            this.brokerUrl = brokerUrl;
-        }
-        
-        public String getUsername() {
-            return username;
-        }
-        
-        public void setUsername(String username) {
-            this.username = username;
-        }
-        
-        public String getPassword() {
-            return password;
-        }
-        
-        public void setPassword(String password) {
-            this.password = password;
-        }
     }
     
     public static class Kafka {

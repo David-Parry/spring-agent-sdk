@@ -25,7 +25,6 @@ import java.util.concurrent.atomic.AtomicLong;
  * Tracks queue depth, message processing rates, errors, and retries.
  */
 @Component
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "local")
 public class LocalQueueMetrics {
     
     private static final Logger logger = LoggerFactory.getLogger(LocalQueueMetrics.class);

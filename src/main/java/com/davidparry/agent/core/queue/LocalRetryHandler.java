@@ -24,28 +24,45 @@ import java.util.concurrent.TimeUnit;
  * Implements exponential backoff and maximum retry attempts.
  */
 @Component
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "local")
 public class LocalRetryHandler {
     
     private static final Logger logger = LoggerFactory.getLogger(LocalRetryHandler.class);
     
     private final LocalQueueService queueService;
-    private final LocalQueueProperties properties;
     private final ScheduledExecutorService retryScheduler;
     
     // Track retry attempts per message (using message hash as key)
     private final Map<String, Integer> retryAttempts = new ConcurrentHashMap<>();
     
-    public LocalRetryHandler(LocalQueueService queueService, LocalQueueProperties properties) {
+    /**
+     * Maximum number of retry attempts for failed messages.
+     */
+    private static final int MAX_RETRY_ATTEMPTS = 3;
+    
+    /**
+     * Initial delay in milliseconds before first retry.
+     */
+    private static final long RETRY_DELAY_MS = 1000;
+    
+    /**
+     * Maximum delay in milliseconds between retries (with exponential backoff).
+     */
+    private static final long MAX_RETRY_DELAY_MS = 30000;
+    
+    /**
+     * Whether to use exponential backoff for retries.
+     */
+    private static final boolean EXPONENTIAL_BACKOFF = true;
+    
+    public LocalRetryHandler(LocalQueueService queueService) {
         this.queueService = queueService;
-        this.properties = properties;
         this.retryScheduler = Executors.newScheduledThreadPool(2, r -> {
             Thread thread = new Thread(r);
             thread.setName("local-queue-retry-scheduler");
             thread.setDaemon(true);
             return thread;
         });
-        logger.info("LocalRetryHandler initialized with max {} retry attempts", properties.getRetryAttempts());
+        logger.info("LocalRetryHandler initialized with max {} retry attempts", MAX_RETRY_ATTEMPTS);
     }
     
     /**
@@ -60,9 +77,9 @@ public class LocalRetryHandler {
         String messageKey = generateMessageKey(message);
         int currentAttempts = retryAttempts.getOrDefault(messageKey, 0);
         
-        if (currentAttempts >= properties.getRetryAttempts()) {
+        if (currentAttempts >= MAX_RETRY_ATTEMPTS) {
             logger.error("Message exceeded max retry attempts ({}), moving to dead letter queue: {}", 
-                        properties.getRetryAttempts(),
+                        MAX_RETRY_ATTEMPTS,
                         message.length() > 100 ? message.substring(0, 100) + "..." : message);
             
             // Move to dead letter queue
@@ -83,7 +100,7 @@ public class LocalRetryHandler {
         
         logger.warn("Scheduling retry attempt {} of {} for message after {}ms delay. Error: {}", 
                    nextAttempt, 
-                   properties.getRetryAttempts(), 
+                   MAX_RETRY_ATTEMPTS, 
                    delayMs,
                    exception.getMessage());
         
@@ -115,15 +132,15 @@ public class LocalRetryHandler {
      * @return The delay in milliseconds
      */
     private long calculateRetryDelay(int attemptNumber) {
-        if (!properties.isExponentialBackoff()) {
-            return properties.getRetryDelayMs();
+        if (!EXPONENTIAL_BACKOFF) {
+            return RETRY_DELAY_MS;
         }
         
         // Exponential backoff: delay * (2 ^ (attempt - 1))
-        long delay = properties.getRetryDelayMs() * (long) Math.pow(2, attemptNumber - 1);
+        long delay = RETRY_DELAY_MS * (long) Math.pow(2, attemptNumber - 1);
         
         // Cap at maximum delay
-        return Math.min(delay, properties.getMaxRetryDelayMs());
+        return Math.min(delay, MAX_RETRY_DELAY_MS);
     }
     
     /**
