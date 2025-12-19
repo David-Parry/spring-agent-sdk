@@ -33,7 +33,6 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * maintaining thread separation from publishers.
  */
 @Service
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "local")
 public class LocalMessageConsumer {
     
     private static final Logger logger = LoggerFactory.getLogger(LocalMessageConsumer.class);
@@ -41,23 +40,31 @@ public class LocalMessageConsumer {
     private final LocalQueueService queueService;
     private final MessageRouter messageRouter;
     private final MessagingProperties messagingProperties;
-    private final LocalQueueProperties localQueueProperties;
     private final LocalRetryHandler retryHandler;
     
     private ExecutorService consumerExecutor;
     private final AtomicBoolean running = new AtomicBoolean(false);
     private final List<String> activeQueues = new ArrayList<>();
     
+    /**
+     * Default number of consumer threads per queue.
+     * Using 1 thread ensures message ordering within a queue.
+     */
+    private static final int CONSUMER_THREADS_PER_QUEUE = 1;
+    
+    /**
+     * Default poll timeout in seconds.
+     */
+    private static final long POLL_TIMEOUT_SECONDS = 5;
+    
     public LocalMessageConsumer(
             LocalQueueService queueService,
             MessageRouter messageRouter,
             MessagingProperties messagingProperties,
-            LocalQueueProperties localQueueProperties,
             LocalRetryHandler retryHandler) {
         this.queueService = queueService;
         this.messageRouter = messageRouter;
         this.messagingProperties = messagingProperties;
-        this.localQueueProperties = localQueueProperties;
         this.retryHandler = retryHandler;
     }
     
@@ -65,7 +72,7 @@ public class LocalMessageConsumer {
     public void startConsumers() {
         if (running.compareAndSet(false, true)) {
             logger.info("Starting LocalMessageConsumer with {} consumer threads per queue", 
-                       localQueueProperties.getConsumerThreads());
+                       CONSUMER_THREADS_PER_QUEUE);
             
             // Use virtual threads for efficient concurrent processing
             consumerExecutor = Executors.newVirtualThreadPerTaskExecutor();
@@ -90,7 +97,7 @@ public class LocalMessageConsumer {
      * @param queueName The name of the queue to consume from
      */
     private void startConsumerForQueue(String queueName) {
-        int threadCount = localQueueProperties.getConsumerThreads();
+        int threadCount = CONSUMER_THREADS_PER_QUEUE;
         
         for (int i = 0; i < threadCount; i++) {
             final int threadIndex = i;
@@ -113,7 +120,7 @@ public class LocalMessageConsumer {
                 // Poll for message with timeout
                 String message = queueService.dequeue(
                     queueName, 
-                    localQueueProperties.getPollTimeoutSeconds(), 
+                    POLL_TIMEOUT_SECONDS, 
                     TimeUnit.SECONDS
                 );
                 

@@ -63,14 +63,7 @@ dependencies {
     // Caffeine cache for bounded metric storage
     implementation("com.github.ben-manes.caffeine:caffeine:3.1.8")
 
-    // ActiveMQ and JMS dependencies
-    api("org.springframework.boot:spring-boot-starter-activemq")
-    api("jakarta.jms:jakarta.jms-api")
-
-    // Kafka dependencies
-    api("org.springframework.kafka:spring-kafka")
-
-    // Jakarta Servlet API
+    // Jakarta Servlet API - Global Error Exception handling
     api("jakarta.servlet:jakarta.servlet-api")
 
     // Testing
@@ -125,15 +118,6 @@ publishing {
         maven {
             url = uri(layout.buildDirectory.dir("staging-deploy"))
         }
-
-//        maven {
-//            name = "GitHubPackages"
-//            url = uri("https://maven.pkg.github.com/David-Parry/spring-command-sdk")
-//            credentials {
-//                username = System.getenv("GITHUB_ACTOR") ?: project.findProperty("gpr.user") as String? ?: ""
-//                password = System.getenv("GITHUB_TOKEN") ?: project.findProperty("gpr.key") as String? ?: ""
-//            }
-//        }
 
 
 

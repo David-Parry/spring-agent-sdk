@@ -41,66 +41,7 @@ qodo:
     # Default: 1800 seconds (30 minutes)
     total-session-timeout-seconds: ${QODO_WS_TOTAL_SESSION_TIMEOUT_SECONDS:1800}
 
-# Messaging configuration
-messaging:
-  provider: ${MESSAGING_PROVIDER:activemq}
-  queue:
-    audit: ${MESSAGING_DEFAULT_TOPIC:audit}
-    event: ${MESSAGING_EVENT_TOPIC:event}
-    response: ${MESSAGING_RESPONSE_TOPIC:response}
-  activemq:
-    broker-url: ${MESSAGING_ACTIVEMQ_BROKER_URL:tcp://localhost:61616}
-    username: ${MESSAGING_ACTIVEMQ_USERNAME:qodo}
-    password: ${MESSAGING_ACTIVEMQ_PASSWORD:qodo}
-  local:
-    # Maximum capacity for each queue (number of messages)
-    queue-capacity: ${LOCAL_QUEUE_CAPACITY:1000}
-    # Number of consumer threads per queue (1 ensures message ordering)
-    consumer-threads: ${LOCAL_CONSUMER_THREADS:1}
-    # Maximum number of retry attempts for failed messages
-    retry-attempts: ${LOCAL_RETRY_ATTEMPTS:3}
-    # Initial delay in milliseconds before first retry
-    retry-delay-ms: ${LOCAL_RETRY_DELAY_MS:1000}
-    # Maximum delay in milliseconds between retries (with exponential backoff)
-    max-retry-delay-ms: ${LOCAL_MAX_RETRY_DELAY_MS:30000}
-    # Timeout in seconds for polling messages from the queue
-    poll-timeout-seconds: ${LOCAL_POLL_TIMEOUT_SECONDS:5}
-    # Whether to use exponential backoff for retries
-    exponential-backoff: ${LOCAL_EXPONENTIAL_BACKOFF:true}
-  kafka:
-    # Connection settings
-    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
-    group-id: ${KAFKA_GROUP_ID:qodo-agent-group}
-    # Consumer settings
-    auto-offset-reset: ${KAFKA_AUTO_OFFSET_RESET:earliest}
-    enable-auto-commit: ${KAFKA_ENABLE_AUTO_COMMIT:false}
-    max-poll-records: ${KAFKA_MAX_POLL_RECORDS:500}
-    session-timeout-ms: ${KAFKA_SESSION_TIMEOUT_MS:30000}
-    heartbeat-interval-ms: ${KAFKA_HEARTBEAT_INTERVAL_MS:10000}
-    request-timeout-ms: ${KAFKA_REQUEST_TIMEOUT_MS:30000}
-    # Maximum time between poll() calls before consumer is considered dead and removed from group
-    # Must be greater than the maximum expected message processing time (WebSocket session timeout)
-    # Default: 1860000ms (31 minutes) - slightly longer than 30-minute session timeout
-    max-poll-interval-ms: ${KAFKA_MAX_POLL_INTERVAL_MS:1860000}
-    # Producer settings
-    retries: ${KAFKA_RETRIES:3}
-    acks: ${KAFKA_ACKS:all}
-    linger-ms: ${KAFKA_LINGER_MS:1}
-    batch-size: ${KAFKA_BATCH_SIZE:16384}
-    buffer-memory: ${KAFKA_BUFFER_MEMORY:33554432}
-    # Security settings (SSL/SASL) - disabled by default
-    security:
-      enabled: ${KAFKA_SECURITY_ENABLED:false}
-      protocol: ${KAFKA_SECURITY_PROTOCOL:PLAINTEXT}
-      # SSL settings
-      truststore-location: ${KAFKA_SSL_TRUSTSTORE_LOCATION:}
-      truststore-password: ${KAFKA_SSL_TRUSTSTORE_PASSWORD:}
-      keystore-location: ${KAFKA_SSL_KEYSTORE_LOCATION:}
-      keystore-password: ${KAFKA_SSL_KEYSTORE_PASSWORD:}
-      key-password: ${KAFKA_SSL_KEY_PASSWORD:}
-      # SASL settings
-      sasl-mechanism: ${KAFKA_SASL_MECHANISM:PLAIN}
-      sasl-jaas-config: ${KAFKA_SASL_JAAS_CONFIG:}
+
 
 # Server configuration
 server:
@@ -134,15 +75,12 @@ management:
     info:
       access: read_only
     prometheus:
-      enabled: true
+      access: read_only
     metrics:
-      enabled: true
-  health:
-    jms:
-      enabled: ${JMS_HEALTH_ENABLED:true}
+      access: read_only
   metrics:
     tags:
-      application: command-sdk
+      application: agent-sdk
   prometheus:
     metrics:
       export:

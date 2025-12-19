@@ -26,19 +26,11 @@ class LocalRetryHandlerTest {
     @Mock
     private LocalQueueService queueService;
     
-    @Mock
-    private LocalQueueProperties properties;
-    
     private LocalRetryHandler retryHandler;
     
     @BeforeEach
     void setUp() {
-        lenient().when(properties.getRetryAttempts()).thenReturn(3);
-        lenient().when(properties.getRetryDelayMs()).thenReturn(100L);
-        lenient().when(properties.getMaxRetryDelayMs()).thenReturn(1000L);
-        lenient().when(properties.isExponentialBackoff()).thenReturn(true);
-
-        retryHandler = new LocalRetryHandler(queueService, properties);
+        retryHandler = new LocalRetryHandler(queueService);
     }
     
     @Test

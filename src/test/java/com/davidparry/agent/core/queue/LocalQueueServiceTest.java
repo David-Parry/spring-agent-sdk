@@ -23,14 +23,16 @@ import static org.mockito.Mockito.when;
 class LocalQueueServiceTest {
     
     @Mock
-    private LocalQueueProperties properties;
+    private AdaptiveQueueCapacity adaptiveCapacity;
     
     private LocalQueueService queueService;
     
     @BeforeEach
     void setUp() {
-        when(properties.getQueueCapacity()).thenReturn(10);
-        queueService = new LocalQueueService(properties);
+        when(adaptiveCapacity.calculateCapacity()).thenReturn(10);
+        when(adaptiveCapacity.getMinCapacity()).thenReturn(100);
+        when(adaptiveCapacity.getMaxCapacity()).thenReturn(100_000);
+        queueService = new LocalQueueService(adaptiveCapacity);
     }
     
     @Test

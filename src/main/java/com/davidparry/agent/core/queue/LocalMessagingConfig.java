@@ -22,7 +22,6 @@ import org.springframework.transaction.support.DefaultTransactionStatus;
  * Provides beans for the local queue implementation when messaging.provider is set to "local".
  */
 @Configuration
-@ConditionalOnProperty(name = "messaging.provider", havingValue = "local")
 public class LocalMessagingConfig {
     
     private static final Logger logger = LoggerFactory.getLogger(LocalMessagingConfig.class);
@@ -39,7 +38,6 @@ public class LocalMessagingConfig {
      * strict transactional requirements, consider using a more robust solution.
      */
     @Bean
-    @ConditionalOnProperty(name = "messaging.provider", havingValue = "local")
     public PlatformTransactionManager localTransactionManager() {
         logger.info("Creating LocalTransactionManager for local queue operations");
         
