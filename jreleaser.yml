@@ -1,6 +1,6 @@
 project:
   name: core
-  version: 2.0.14
+  version: 2.1.3
   description: Core framework for Qodo Agent SDK
   authors:
     - David Parry

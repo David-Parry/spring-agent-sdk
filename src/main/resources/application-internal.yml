@@ -97,9 +97,6 @@ logging:
             StdioClientTransport: ERROR
     com.davidparry.agent: INFO
     com.davidparry.agent.core: ${LOGGING_LEVEL_AI_QODO_COMMAND_INTERNAL:INFO}
-    com.davidparry.agent.core.service.WebSocketService: DEBUG
-    com.davidparry.agent.core.service.BaseHandler: TRACE
-    com.davidparry.agent.core.transformer.TemplateProcessor: TRACE
 
   pattern:
     console: "%d{yy-MM-dd HH:mm:ss} - [%logger{36}] - %msg%n"
