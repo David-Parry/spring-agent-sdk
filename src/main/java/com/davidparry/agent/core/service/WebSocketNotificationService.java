@@ -492,10 +492,20 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
             return;
         }
 
+        String type = taskResponse.type();
+        // Handle keepalive messages first (they have type="keepalive" but no tool)
+        if ("keepalive".equalsIgnoreCase(type)) {
+            logger.trace("Received keepalive message for session {}", session.sessionId());
+            return;
+        }
+
         ToolData toolData = taskResponse.data();
         String value = toolData.tool() != null ? toolData.tool().toUpperCase() : "NA";
-
         switch (value) {
+            case "NA":
+                // No tool specified - could be a status message or other non-tool response
+                logger.debug("Received message with no tool for session {}: type={}", session.sessionId(), type);
+                break;
             case "USERRESPONSE":
                 logger.debug("AI Analysis for event {}: {}", session.eventKey(), taskResponse);
                 allTaskResponses.add(taskResponse);
@@ -519,7 +529,8 @@ public class WebSocketNotificationService implements MessageService, BeanNameAwa
                                      "or going to end_node", handler);
                 // Using the agent.yml file for routing to next or going to endnode not further work
                 if (handler == null) {
-                    if (session.agentCommand().next().isBlank()) {
+                    String nextAgent = session.agentCommand().next();
+                    if (nextAgent == null || nextAgent.isBlank()) {
                         logger.debug("No next for the next Agent calling {} to end the flow",
                                      EndFlowCleanup.TYPE + HANDLER_SUFFIX);
                         handler = applicationContext.getBean(EndFlowCleanup.TYPE + HANDLER_SUFFIX, Handler.class);

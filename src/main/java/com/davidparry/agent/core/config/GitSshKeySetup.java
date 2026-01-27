@@ -38,8 +38,10 @@ import java.util.Set;
 public class GitSshKeySetup {
     private static final Logger logger = LoggerFactory.getLogger(GitSshKeySetup.class);
     private static final String GIT_SSH_PRIVATE_KEY = "GIT_SSH_PRIVATE_KEY";
+    private static final String GIT_ADO_SSH_PRIVATE_KEY = "GIT_ADO_SSH_PRIVATE_KEY";
     private final String sshDir;
     private final String privateKeyPath;
+    private final String privateAdoKeyPath;
 
     /**
      * Creates a new GitSshKeySetup using the current user's home directory.
@@ -48,6 +50,7 @@ public class GitSshKeySetup {
         String userHome = System.getProperty("user.home");
         this.sshDir = userHome + "/.ssh";
         this.privateKeyPath = sshDir + "/aws_ecdsa";
+        this.privateAdoKeyPath = sshDir+ "/id_ado_rsa";
     }
 
     /**
@@ -58,26 +61,45 @@ public class GitSshKeySetup {
     public void setupSshKeys() {
         try {
             String privateKeyEnv = System.getenv(GIT_SSH_PRIVATE_KEY);
+            String adoPrivateKeyEnv = System.getenv(GIT_ADO_SSH_PRIVATE_KEY);
 
-            if (privateKeyEnv == null || privateKeyEnv.isEmpty()) {
-                logger.error("No SSH private key found in environment variable {}", GIT_SSH_PRIVATE_KEY);
+            boolean hasGitKey = privateKeyEnv != null && !privateKeyEnv.isEmpty();
+            boolean hasAdoKey = adoPrivateKeyEnv != null && !adoPrivateKeyEnv.isEmpty();
+
+            if (!hasGitKey) {
+                logger.info("No SSH private key found in environment variable {}, skipping Git SSH key setup", GIT_SSH_PRIVATE_KEY);
+            }
+            if (!hasAdoKey) {
+                logger.info("No SSH private key found in environment variable {}, skipping ADO SSH key setup", GIT_ADO_SSH_PRIVATE_KEY);
+            }
+
+            // If no keys are provided, skip SSH setup entirely
+            if (!hasGitKey && !hasAdoKey) {
+                logger.info("No SSH keys configured, skipping SSH setup");
                 return;
             }
 
             // Create .ssh directory if needed
             createSshDirectory();
 
-            // Decode and write private key
-            String privateKey = decodeKey(privateKeyEnv);
-            writePrivateKey(privateKey);
+            // Decode and write private keys only if they exist
+            if (hasGitKey) {
+                String privateKey = decodeKey(privateKeyEnv);
+                writePrivateKey(privateKey, privateKeyPath);
+            }
+
+            if (hasAdoKey) {
+                String adoPrivateKey = decodeKey(adoPrivateKeyEnv);
+                writePrivateKey(adoPrivateKey, privateAdoKeyPath);
+            }
 
             // Create SSH config
-            createSshConfig();
+            createSshConfig(hasGitKey, hasAdoKey);
             
             // Try to add key to SSH agent if available
-            addKeyToAgent();
+            addKeyToAgent(hasGitKey, hasAdoKey);
 
-            logger.info("SSH keys successfully configured @ {} for Git operations", privateKeyPath);
+            logger.info("SSH keys successfully configured for Git operations");
 
         } catch (Exception e) {
             throw new RuntimeException("Failed to setup SSH keys", e);
@@ -137,8 +159,8 @@ public class GitSshKeySetup {
         }
     }
 
-    private void writePrivateKey(String privateKey) throws IOException {
-        Path keyPath = Paths.get(privateKeyPath);
+    private void writePrivateKey(String privateKey, String path) throws IOException {
+        Path keyPath = Paths.get(path);
 
         // Write the private key
         Files.writeString(keyPath, privateKey);
@@ -153,14 +175,17 @@ public class GitSshKeySetup {
             logger.info("Setup unix style OS set up ssh directory with {} and keypath {}", perms, keyPath);
         }
 
-        logger.debug("Private key written to: {}", privateKeyPath);
+        logger.debug("Private key written to: {}", path);
     }
 
-    private void createSshConfig() throws IOException {
+    private void createSshConfig(boolean hasGitKey, boolean hasAdoKey) throws IOException {
         String sshConfigPath = sshDir + "/config";
         Path configPath = Paths.get(sshConfigPath);
 
-        String sshConfig = """
+        StringBuilder sshConfig = new StringBuilder();
+        
+        if (hasGitKey) {
+            sshConfig.append("""
                 Host github.com
                     HostName github.com
                     User git
@@ -168,9 +193,22 @@ public class GitSshKeySetup {
                     IdentitiesOnly yes
                     StrictHostKeyChecking accept-new
                 
-                """.formatted(privateKeyPath);
+                """.formatted(privateKeyPath));
+        }
+        
+        if (hasAdoKey) {
+            sshConfig.append("""
+                Host ssh.dev.azure.com
+                    HostName ssh.dev.azure.com
+                    User git
+                    IdentityFile %s
+                    IdentitiesOnly yes
+                    StrictHostKeyChecking accept-new
+                
+                """.formatted(privateAdoKeyPath));
+        }
 
-        Files.writeString(configPath, sshConfig);
+        Files.writeString(configPath, sshConfig.toString());
 
         // Set permissions: 600
         if (isUnix()) {
@@ -181,22 +219,17 @@ public class GitSshKeySetup {
         logger.info("SSH config written to: {} ", sshConfigPath);
     }
 
-    private void addKeyToAgent() {
+    private void addKeyToAgent(boolean hasGitKey, boolean hasAdoKey) {
         try {
             // Check if SSH agent is running
             String sshAuthSock = System.getenv("SSH_AUTH_SOCK");
             if (sshAuthSock != null && !sshAuthSock.isEmpty()) {
                 logger.info("SSH_AUTH_SOCK detected: {}, attempting to add key to agent", sshAuthSock);
-                
-                // Try to add the key to the SSH agent
-                ProcessBuilder pb = new ProcessBuilder("ssh-add", privateKeyPath);
-                Process process = pb.start();
-                int exitCode = process.waitFor();
-                
-                if (exitCode == 0) {
-                    logger.info("Successfully added SSH key to agent");
-                } else {
-                    logger.warn("Failed to add SSH key to agent, exit code: {}", exitCode);
+                if (hasGitKey) {
+                    addKeyPathToAgent(privateKeyPath);
+                }
+                if (hasAdoKey) {
+                    addKeyPathToAgent(privateAdoKeyPath);
                 }
             } else {
                 logger.info("SSH agent not detected (SSH_AUTH_SOCK not set), skipping agent configuration");
@@ -205,6 +238,23 @@ public class GitSshKeySetup {
             logger.warn("Error adding key to SSH agent: {}", e.getMessage());
         }
     }
+
+    private void addKeyPathToAgent(String path) {
+        try {
+            ProcessBuilder pb = new ProcessBuilder("ssh-add", path);
+            Process process = pb.start();
+            int exitCode = process.waitFor();
+
+            if (exitCode == 0) {
+                logger.info("Successfully added SSH key to agent");
+            } else {
+                logger.warn("Failed to add SSH key to agent, exit code: {}", exitCode);
+            }
+        } catch (Exception e) {
+            logger.warn("Error adding keypath {} to SSH agent", path, e);
+        }
+    }
+
     
     private boolean isUnix() {
         String os = System.getProperty("os.name").toLowerCase();

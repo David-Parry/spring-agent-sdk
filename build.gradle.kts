@@ -8,7 +8,7 @@ plugins {
 }
 
 group = project.findProperty("group") as String? ?: "ai.qodo.command"
-version = project.findProperty("version") as String? ?: "2.0.0"
+version = project.findProperty("version") as String? ?: "2.1.6"
 
 java {
     toolchain {

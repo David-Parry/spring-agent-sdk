@@ -16,7 +16,7 @@ import java.util.Map;
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ToolData(
     @JsonProperty(value = "server_name",required = false) String serverName,
-    @JsonProperty(value="tool",required = true) String tool,
+    @JsonProperty(value="tool",required = false) String tool,
     @JsonProperty(value = "tool_args",required = false) Map<String, Object> toolArgs,
     @JsonProperty(value="tool_reasoning", required = false) String toolReasoning,
     @JsonProperty(value= "identifier" ,required = false) String identifier,
